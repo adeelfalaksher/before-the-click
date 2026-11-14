@@ -3,7 +3,7 @@
 import {useCallback,useEffect,useMemo,useState} from "react";
 import Link from "next/link";
 import {
- Activity,ArrowDownRight,ArrowRight,ArrowUpRight,Bell,Check,CheckCircle2,ChevronDown,
+ Activity,ArrowDownRight,ArrowRight,ArrowUpRight,Bell,Check,CheckCircle2,ChevronDown,Download,
  ChevronRight,Clock3,FileText,FolderClosed,Inbox,KeyRound,LayoutDashboard,LogOut,
  Mail,Plus,RefreshCw,Search,Settings2,ShieldCheck,Sparkles,Users,Workflow,
  X,CalendarDays,ExternalLink,LockKeyhole,Send,AlertTriangle,Copy
@@ -23,7 +23,7 @@ type Step={version_id:string;position:number;reviewer_id:string};
 type Decision={version_id:string;position:number;decision:string;comment:string;created_at:string};
 type Connection={id:string;provider:string;account:string;connected_at:string;owner_id:string};
 type Policy={workspace_id:string;allow_send:boolean;allow_calendar:boolean;allow_drive:boolean;allow_self_approval:boolean};
-type Audit={id:number;event:string;detail:any;created_at:string;workflow_id:string|null};
+type Audit={id:number;event:string;detail:Record<string,unknown>;created_at:string;workflow_id:string|null};
 type Stored={id:string;title:string;body:string;created_at:string};
 type Attachment={id:string;workspace_id:string;uploader_id:string;object_path:string;filename:string;mime_type:string;byte_size:number;created_at:string};
 type Notice={text:string;bad?:boolean};
@@ -233,6 +233,33 @@ export default function Console({userId,email}:{userId:string;email:string}){
    if(!r.ok)throw new Error(d.detail?.message||apiError(d));
    announce("Operation completed and verified. Reference: "+short(d.reference||"",18));
   }catch(e){announce(e instanceof Error?e.message:"Execution could not be confirmed.",true);}
+  finally{setSaving(false);}
+ }
+ async function cancelWorkflow(flowId:string){
+  if(!confirm("Cancel this workflow and close its approval request?"))return;
+  setSaving(true);
+  try{
+   const {error}=await supabase.rpc("btc_cancel",{f:flowId});
+   if(error)throw new Error(error.message);
+   await refresh(workspaceId);
+   announce("Workflow cancelled.");
+  }catch(e){announce(e instanceof Error?e.message:"Could not cancel the workflow.",true);}
+  finally{setSaving(false);}
+ }
+ async function downloadAudit(){
+  if(!workspaceId)return;
+  setSaving(true);
+  try{
+   const {data,error}=await supabase.rpc("btc_export_audit",{w:workspaceId});
+   if(error)throw new Error(error.message);
+   const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+   const url=URL.createObjectURL(blob);
+   const link=document.createElement("a");
+   link.href=url;
+   link.download=`before-the-click-audit-${idLabel(workspaceId)}.json`;
+   link.click();
+   setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }catch(e){announce(e instanceof Error?e.message:"Could not export the audit log.",true);}
   finally{setSaving(false);}
  }
  async function updatePolicies(next:Policy){
@@ -461,6 +488,7 @@ export default function Console({userId,email}:{userId:string;email:string}){
           <button className="bt-primary" disabled={saving} onClick={()=>setConfirmExecute(selected.id)}>Execute action <ArrowRight size={17}/></button></div>}
         {selected.created_by===userId&&["awaiting_approval","changes_requested","rejected","approved","failed"].includes(selected.status)&&
          <div className="bt-revision-action"><button className="bt-secondary" onClick={()=>reviseWorkflow(selected)}>Revise this proposal <ArrowRight size={15}/></button>
+          {selected.status!=="failed"&&<button className="bt-secondary" disabled={saving} onClick={()=>void cancelWorkflow(selected.id)}>Cancel workflow</button>}
           <span>Revisions create a new version and invalidate all previous approvals.</span></div>}
         {selected.status==="completed"&&<div className="bt-success">Completed. The verified outcome appears in the audit ledger.</div>}
         {selected.status==="needs_verification"&&<div className="bt-alert">The provider outcome is uncertain. Do not repeat this operation until its result is checked.</div>}
@@ -518,9 +546,11 @@ export default function Console({userId,email}:{userId:string;email:string}){
            onChange={e=>void updatePolicies({...policy,[rule.key]:e.target.checked})}/></label>)}
        {!isAdmin&&<p className="bt-muted">Only workspace administrators can change policies.</p>}
       </section>}
-      {view==="audit"&&<section className="bt-card"><div className="bt-card-header"><div><div className="bt-eyebrow">APPEND-ONLY EVENT HISTORY</div><h2>Audit ledger</h2></div><span className="bt-record-id">{audit.length} events</span></div>
-       {audit.length?audit.map(entry=><div className="bt-audit-line" key={entry.id}><span className="bt-audit-icon"><Activity size={16}/></span><div><strong>{entry.event.replaceAll("."," / ").replaceAll("_"," ")}</strong>
-        <small>{entry.workflow_id?"Workflow "+idLabel(entry.workflow_id):"Workspace event"}</small></div><time>{pretty(entry.created_at)}</time></div>):
+      {view==="audit"&&<section className="bt-card"><div className="bt-card-header"><div><div className="bt-eyebrow">APPEND-ONLY EVENT HISTORY</div><h2>Audit ledger</h2><p>Up to 100 recent events</p></div>
+       <button className="bt-secondary" disabled={saving} onClick={()=>void downloadAudit()}><Download size={15}/> Export audit</button></div>
+       {audit.length?audit.map(entry=><details className="bt-audit-event" key={entry.id}><summary className="bt-audit-line"><span className="bt-audit-icon"><Activity size={16}/></span><div><strong>{entry.event.replaceAll("."," / ").replaceAll("_"," ")}</strong>
+        <small>{entry.workflow_id?"Workflow "+idLabel(entry.workflow_id):"Workspace event"}</small></div><time>{pretty(entry.created_at)}</time><ChevronDown size={15}/></summary>
+        <dl>{Object.keys(entry.detail).length?Object.entries(entry.detail).map(([key,value])=><div key={key}><dt>{key.replaceAll("_"," ")}</dt><dd>{String(value??"—")}</dd></div>):<div><dt>Event</dt><dd>{entry.event}</dd></div>}</dl></details>):
        <div className="bt-empty in-card"><Activity size={24}/><strong>No activity yet.</strong></div>}
       </section>}
       {view==="team"&&<>

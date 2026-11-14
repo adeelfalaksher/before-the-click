@@ -161,6 +161,12 @@ html{background:#fff}body{background:#fff!important;color:var(--bt-ink)!importan
 .bt-audit-line>div,.bt-person-line>span:nth-child(2){flex:1;display:flex;flex-direction:column;gap:3px}
 .bt-audit-line strong,.bt-person-line strong{font-size:12px;font-weight:700}
 .bt-audit-line small,.bt-person-line small{font-size:10px;color:#929da8}
+.bt-audit-event summary{cursor:pointer;list-style:none}
+.bt-audit-event summary::-webkit-details-marker{display:none}
+.bt-audit-event[open] summary>svg:last-child{transform:rotate(180deg)}
+.bt-audit-event dl{padding:0 29px 15px 80px;margin:0;color:var(--bt-muted);font-size:12px;overflow-wrap:anywhere}
+.bt-audit-event dl div{display:grid;grid-template-columns:minmax(90px,1fr) 3fr;gap:12px;padding:6px 0}
+.bt-audit-event dd{margin:0;color:var(--bt-ink)}
 .bt-audit-line time{font-size:11px;color:#9ca5ac}
 .bt-person-avatar{width:36px;height:36px;border-radius:50%;background:#e7ebf3;color:#334d81;display:grid;place-items:center;font-weight:800;font-size:12px}
 .bt-role{font-size:10px;color:#647183;text-transform:capitalize;background:#f2f4f7;padding:5px 9px;border-radius:12px}
