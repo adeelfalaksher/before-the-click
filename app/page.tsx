@@ -27,7 +27,7 @@ export default function Home() {
               <Link href="/console?view=approvals">Approvals</Link>
               <Link href="/guide">Field guide</Link>
             </nav>
-            <Link className="button dark header-cta" href="/console">Open workspace <ArrowUpRight size={15} /></Link>
+            <Link className="button dark header-cta" href="/login">Sign in <ArrowUpRight size={15} /></Link>
           </header>
           <div className="hero-visual">
             <div className="hero-art"><Image src="/architecture.webp" alt="" width={1320} height={880} priority unoptimized /></div>
@@ -38,7 +38,7 @@ export default function Home() {
             <h1>Before an agent acts,<br /><em>see what happens.</em></h1>
             <p>Review what an AI agent plans to do, get the right people to sign off, and verify the result.</p>
             <div className="hero-actions">
-              <Link className="button dark" href="/console">Open your workspace <ArrowRight size={18} /></Link>
+              <Link className="button dark" href="/login?mode=signup">Create an account <ArrowRight size={18} /></Link>
               <a className="text-link" href="#workflow">Explore the workflow <ArrowDownRight size={16} /></a>
             </div>
           </div>

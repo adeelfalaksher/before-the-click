@@ -5,7 +5,7 @@ import {Brand,SiteFooter} from "../ui";
 
 export const metadata:Metadata={title:"Field guide"};
 const sections=[
- ["1. Start securely","Register an account and verify your email. Create a workspace that will contain members, policies, actions and audit history."],
+ ["1. Start securely","Choose a unique username and password. Save your recovery code, then create a workspace for your actions and decisions."],
  ["2. Create a proposal","Choose an action, describe the desired result and write its exact content. Gemini can prepare a draft, which must be reviewed and edited by a person."],
  ["3. Choose reviewers","Assign authorized workspace members to an ordered approval queue. Each approval applies only to the current immutable workflow version."],
  ["4. Apply workspace policies","Administrators control permitted external actions and whether a workflow owner can self-approve. Server rules apply to the final execution, not just the interface."],

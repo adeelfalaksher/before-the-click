@@ -34,13 +34,11 @@ export function decryptToken(ciphertext:string):Token{
 export async function saveToken(actor:Actor,workspace:string,provider:Provider,account:string,token:Token){
  const operation=signedOperation(actor.user.id,"connection",
   {intent:"set",workspace,provider,account,scopes:token.scope.split(" ").filter(Boolean),ciphertext:encryptToken(token)});
- const {error}=await actor.supabase.rpc("btc_connection",operation);
- if(error)throw error;
+ await actor.data("btc_connection",operation);
 }
 export async function getToken(actor:Actor,workspace:string,provider:Provider):Promise<{token:Token;account:string}>{
  const operation=signedOperation(actor.user.id,"connection",{intent:"get",workspace,provider});
- const {data,error}=await actor.supabase.rpc("btc_connection",operation);
- if(error)throw error;
+ const data=await actor.data<{ciphertext:string;account:string}|null>("btc_connection",operation);
  if(!data||!data.ciphertext)throw new Error("Connect the selected Google account first.");
  let token=decryptToken(data.ciphertext);
  if(token.expires_at<Date.now()+1000*90){

@@ -14,10 +14,12 @@ const instruction = "Write a concise plain-text draft for human review. Use the 
 
 type DraftInput = { objective: string; context: string; kind: "email" | "record" };
 
+const openRouterModel=()=>process.env.OPENROUTER_MODEL||"openrouter/free";
+
 export function draftAvailability() {
   return {
     gemini: Boolean(process.env.GEMINI_API_KEY),
-    openrouter: Boolean(process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_MODEL?.endsWith(":free"))
+    openrouter: Boolean(process.env.OPENROUTER_API_KEY && (openRouterModel()==="openrouter/free"||openRouterModel().endsWith(":free")))
   };
 }
 
@@ -50,10 +52,10 @@ export async function writeDraft(input: DraftInput, providers: ReturnType<typeof
         method:"POST", headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.OPENROUTER_API_KEY},
         signal:AbortSignal.timeout(8_000), cache:"no-store",
         body:JSON.stringify({
-          model:process.env.OPENROUTER_MODEL,max_tokens:1000,
+          model:openRouterModel(),max_tokens:1000,
           messages:[{role:"system",content:instruction},{role:"user",content}],
           response_format:{type:"json_schema",json_schema:{name:"draft",strict:true,schema:responseSchema}},
-          provider:{require_parameters:true,data_collection:"deny"}
+          provider:{require_parameters:true,data_collection:"deny",max_price:{prompt:0,completion:0,request:0}}
         })
       });
       limited ||= response.status === 429;

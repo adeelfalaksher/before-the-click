@@ -11,7 +11,7 @@ export async function GET(request:NextRequest){
  const workspace=request.nextUrl.searchParams.get("workspace");
  if(provider!=="gmail"&&provider!=="calendar"&&provider!=="drive")return Response.json({error:"Invalid provider."},{status:400});
  if(!workspace||!/^[0-9a-f-]{36}$/i.test(workspace))return Response.json({error:"Invalid workspace."},{status:400});
- const {data:member}=await actor.supabase.from("workspace_members").select("role").eq("workspace_id",workspace).eq("user_id",actor.user.id).maybeSingle();
+ const member=await actor.data("member",{workspace});
  if(!member)return Response.json({error:"Workspace access required."},{status:403});
  const state=randomBytes(24).toString("hex");
  const verifier=randomBytes(32).toString("base64url");

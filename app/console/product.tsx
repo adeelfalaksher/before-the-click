@@ -1,6 +1,6 @@
 "use client";
 
-import {useCallback,useEffect,useMemo,useState} from "react";
+import {useCallback,useEffect,useState} from "react";
 import Link from "next/link";
 import {
  Activity,ArrowDownRight,ArrowRight,ArrowUpRight,Bell,Check,CheckCircle2,ChevronDown,Download,
@@ -8,7 +8,8 @@ import {
  Mail,Plus,RefreshCw,Search,Settings2,ShieldCheck,Sparkles,Users,Workflow,
  X,CalendarDays,ExternalLink,LockKeyhole,Send,AlertTriangle,Copy
 } from "lucide-react";
-import {browserSupabase} from "@/lib/supabase-browser";
+import {browserStorage} from "@/lib/supabase-browser";
+import {workspaceRequest} from "@/lib/workspace-client";
 import {ResourceBrowser} from "./resource-browser";
 import {extractEmailAddress} from "@/lib/resource-picker";
 import {Brand} from "../ui";
@@ -56,8 +57,7 @@ function Status({value}:{value:string}){
  return <span className={"bt-status "+tone}><i/>{statusNames[value]||value.replaceAll("_"," ")}</span>;
 }
 
-export default function Console({userId,email}:{userId:string;email:string}){
- const supabase=useMemo(()=>browserSupabase(),[]);
+export default function Console({userId,username}:{userId:string;username:string}){
  const [view,setView]=useState<View>("overview"),[workspaces,setWorkspaces]=useState<W[]>([]);
  const [memberships,setMemberships]=useState<Member[]>([]),[workspaceId,setWorkspaceId]=useState("");
  const [members,setMembers]=useState<Member[]>([]),[people,setPeople]=useState<Person[]>([]);
@@ -76,7 +76,7 @@ export default function Console({userId,email}:{userId:string;email:string}){
   title:"",objective:"",provider:"workspace" as Provider,subject:"",body:"",
   to:"",account:"",start:"",end:"",fileId:"",destinationId:"",reviewers:[] as string[],sensitive:false
  });
- const [teamEmail,setTeamEmail]=useState(""),[teamRole,setTeamRole]=useState("reviewer"),[inviteLink,setInviteLink]=useState("");
+ const [teamUsername,setTeamUsername]=useState(""),[teamRole,setTeamRole]=useState("reviewer"),[inviteLink,setInviteLink]=useState("");
  const [editingId,setEditingId]=useState<string|null>(null);
  const [profileName,setProfileName]=useState(""),[drafting,setDrafting]=useState(false);
  const activeWorkspace=workspaces.find(w=>w.id===workspaceId);
@@ -95,7 +95,7 @@ export default function Console({userId,email}:{userId:string;email:string}){
  const mapApprovals=mapVersion?decisions.filter(d=>d.version_id===mapVersion.id&&d.decision==="approved"):[];
  const mapReceipt=mapped&&audit.find(event=>event.workflow_id===mapped.id&&event.event==="execution.completed")?.detail.reference;
  const currentMembership=memberships.find(m=>m.workspace_id===workspaceId);
- const displayName=(id:string)=>people.find(p=>p.id===id)?.display_name|| (id===userId?email:idLabel(id));
+ const displayName=(id:string)=>people.find(p=>p.id===id)?.display_name|| (id===userId?username:idLabel(id));
  const assignedReviewers=members.filter(m=>["owner","admin","reviewer"].includes(m.role)&&(m.user_id!==userId||policy?.allow_self_approval===true));
  const isApprover=(flow:Flow)=>{
    const v=versions.find(v=>v.workflow_id===flow.id&&v.version===flow.current_version);
@@ -110,61 +110,30 @@ export default function Console({userId,email}:{userId:string;email:string}){
 
  const refreshWorkspaces=useCallback(async()=>{
   try{
-   const {data:relations,error}=await supabase.from("workspace_members").select("workspace_id,user_id,role").eq("user_id",userId);
-   if(error)throw error;
-   const memberships=(relations||[]) as Member[];setMemberships(memberships);
-   if(!memberships.length){setWorkspaces([]);setWorkspaceId("");return;}
-   const {data:ws,error:wsError}=await supabase.from("workspaces").select("id,name,owner_id,created_at").in("id",memberships.map(m=>m.workspace_id));
-   if(wsError)throw wsError;
-   const sorted=((ws||[]) as W[]).sort((a,b)=>a.name.localeCompare(b.name));
+   const {memberships,workspaces:sorted}=await workspaceRequest<{memberships:Member[];workspaces:W[]}>("workspaces");
+   setMemberships(memberships);
    setWorkspaces(sorted);
    setWorkspaceId(current=>sorted.some(w=>w.id===current)?current:(sorted[0]?.id||""));
   }catch(e){announce(e instanceof Error?e.message:"Cannot load your workspaces.",true);}
   finally{setInitializing(false);}
- },[supabase,userId]);
+ },[userId]);
 
  const refresh=useCallback(async(id:string)=>{
   if(!id)return;
   setLoading(true);
   try{
-   const [workflowRes,memberRes,connectionRes,policyRes,auditRes,recordRes,attachmentRes,notificationRes]=await Promise.all([
-    supabase.from("workflows").select("id,workspace_id,created_by,title,status,current_version,created_at,updated_at").eq("workspace_id",id).order("created_at",{ascending:false}),
-    supabase.from("workspace_members").select("workspace_id,user_id,role").eq("workspace_id",id),
-    supabase.from("integrations").select("id,provider,account,connected_at,owner_id").eq("workspace_id",id),
-    supabase.from("policy_rules").select("*").eq("workspace_id",id).maybeSingle(),
-    supabase.from("audit_events").select("id,event,detail,created_at,workflow_id").eq("workspace_id",id).order("created_at",{ascending:false}).limit(100),
-    supabase.from("workspace_records").select("id,title,body,created_at").eq("workspace_id",id).order("created_at",{ascending:false}).limit(100),
-    supabase.from("attachments").select("id,workspace_id,uploader_id,object_path,filename,mime_type,byte_size,created_at").eq("workspace_id",id).order("created_at",{ascending:false}).limit(100),
-    supabase.from("notifications").select("id,message,read_at").eq("workspace_id",id).eq("user_id",userId).order("created_at",{ascending:false}).limit(30)
-   ]);
-   for(const res of [workflowRes,memberRes,connectionRes,policyRes,auditRes,recordRes,attachmentRes,notificationRes])if(res.error)throw res.error;
-   const wf=(workflowRes.data||[]) as Flow[], group=(memberRes.data||[]) as Member[];
-   setFlows(wf);setMembers(group);setConnections(connectionRes.data||[]);
-   setPolicy(policyRes.data as Policy|null);setAudit(auditRes.data||[]);setRecords(recordRes.data||[]);setAttachments(attachmentRes.data||[]);
-   setNotifications(notificationRes.data||[]);
-   const ids=wf.map(f=>f.id);
-   const userIds=group.map(m=>m.user_id);
-   if(userIds.length){
-    const {data}=await supabase.from("profiles").select("id,display_name").in("id",userIds);
-    setPeople(data||[]);
-    setProfileName(data?.find(p=>p.id===userId)?.display_name||"");
-   }else setPeople([]);
-   if(!ids.length){setVersions([]);setActions([]);setSteps([]);setDecisions([]);return;}
-   const vr=await supabase.from("workflow_versions").select("id,workflow_id,version,objective,created_at").in("workflow_id",ids);
-   if(vr.error)throw vr.error;
-   const vv=(vr.data||[]) as Version[];setVersions(vv);
-   const vvIds=vv.map(v=>v.id);
-   if(!vvIds.length){setActions([]);setSteps([]);setDecisions([]);return;}
-   const [ar,sr,dr]=await Promise.all([
-    supabase.from("proposed_actions").select("id,version_id,provider,operation,resource_id,document").in("version_id",vvIds),
-    supabase.from("approval_steps").select("version_id,position,reviewer_id").in("version_id",vvIds),
-    supabase.from("approval_decisions").select("version_id,position,decision,comment,created_at").in("version_id",vvIds)
-   ]);
-   if(ar.error||sr.error||dr.error)throw ar.error||sr.error||dr.error;
-   setActions(ar.data||[]);setSteps(sr.data||[]);setDecisions(dr.data||[]);
+   const data=await workspaceRequest<{
+    flows:Flow[];members:Member[];connections:Connection[];policy:Policy|null;audit:Audit[];
+    records:Stored[];attachments:Attachment[];notifications:{id:number;message:string;read_at:string|null}[];
+    people:Person[];versions:Version[];actions:Proposed[];steps:Step[];decisions:Decision[];
+   }>("snapshot",{workspace:id});
+   setFlows(data.flows);setMembers(data.members);setConnections(data.connections);setPolicy(data.policy);
+   setAudit(data.audit);setRecords(data.records);setAttachments(data.attachments);setNotifications(data.notifications);
+   setPeople(data.people);setProfileName(data.people.find(p=>p.id===userId)?.display_name||"");
+   setVersions(data.versions);setActions(data.actions);setSteps(data.steps);setDecisions(data.decisions);
   }catch(e){announce(e instanceof Error?e.message:"Could not refresh workspace.",true);}
   finally{setLoading(false);}
- },[supabase,userId]);
+ },[userId]);
 
  useEffect(()=>{void refreshWorkspaces();fetch("/api/integrations/status").then(r=>r.ok?r.json():null).then(d=>{if(d)setConfig(d)}).catch(()=>{});},[refreshWorkspaces]);
  useEffect(()=>{if(workspaceId)void refresh(workspaceId);},[workspaceId,refresh]);
@@ -180,9 +149,9 @@ export default function Console({userId,email}:{userId:string;email:string}){
  async function newWorkspace(e:React.FormEvent){
   e.preventDefault();setSaving(true);
   try{
-   const {data,error}=await supabase.rpc("btc_workspace",{name:workspaceName.trim()});
-   if(error)throw error;setCreateWorkspace(false);setWorkspaceName("");
-   await refreshWorkspaces();setWorkspaceId(data as string);announce("Workspace created.");
+   const data=await workspaceRequest<string>("btc_workspace",{name:workspaceName.trim()});
+   setCreateWorkspace(false);setWorkspaceName("");
+   await refreshWorkspaces();setWorkspaceId(data);announce("Workspace created.");
   }catch(e){announce(e instanceof Error?e.message:"Could not create workspace.",true);}
   finally{setSaving(false);}
  }
@@ -227,8 +196,7 @@ export default function Console({userId,email}:{userId:string;email:string}){
   const v=versions.find(v=>v.workflow_id===flow.id&&v.version===flow.current_version);
   if(!v)return;setSaving(true);
   try{
-   const {error}=await supabase.rpc("btc_decide",{f:flow.id,v:v.id,d:choice,note});
-   if(error)throw error;
+   await workspaceRequest("btc_decide",{f:flow.id,v:v.id,d:choice,note});
    await refresh(workspaceId);announce(choice==="approved"?"Decision recorded.":choice==="changes_requested"?"Changes requested.":"Action rejected.");
   }catch(e){announce(e instanceof Error?e.message:"Decision was not saved.",true);}
   finally{setSaving(false);}
@@ -249,8 +217,7 @@ export default function Console({userId,email}:{userId:string;email:string}){
   if(!confirm("Cancel this workflow and close its approval request?"))return;
   setSaving(true);
   try{
-   const {error}=await supabase.rpc("btc_cancel",{f:flowId});
-   if(error)throw new Error(error.message);
+   await workspaceRequest("btc_cancel",{f:flowId});
    await refresh(workspaceId);
    announce("Workflow cancelled.");
   }catch(e){announce(e instanceof Error?e.message:"Could not cancel the workflow.",true);}
@@ -260,8 +227,7 @@ export default function Console({userId,email}:{userId:string;email:string}){
   if(!workspaceId)return;
   setSaving(true);
   try{
-   const {data,error}=await supabase.rpc("btc_export_audit",{w:workspaceId});
-   if(error)throw new Error(error.message);
+   const data=await workspaceRequest("btc_export_audit",{w:workspaceId});
    const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
    const url=URL.createObjectURL(blob);
    const link=document.createElement("a");
@@ -275,9 +241,9 @@ export default function Console({userId,email}:{userId:string;email:string}){
  async function updatePolicies(next:Policy){
   if(!isAdmin)return;setSaving(true);
   try{
-   const {error}=await supabase.rpc("btc_policies",{w:workspaceId,sending:next.allow_send,calendar:next.allow_calendar,
+   await workspaceRequest("btc_policies",{w:workspaceId,sending:next.allow_send,calendar:next.allow_calendar,
     drive:next.allow_drive,self_approval:next.allow_self_approval});
-   if(error)throw error;await refresh(workspaceId);announce("Workspace policy updated.");
+   await refresh(workspaceId);announce("Workspace policy updated.");
   }catch(e){announce(e instanceof Error?e.message:"Could not update policy.",true);}
   finally{setSaving(false);}
  }
@@ -285,7 +251,7 @@ export default function Console({userId,email}:{userId:string;email:string}){
   e.preventDefault();setSaving(true);setInviteLink("");
   try{
    const r=await fetch("/api/invitations",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({workspace:workspaceId,email:teamEmail,role:teamRole})});
+    body:JSON.stringify({workspace:workspaceId,username:teamUsername,role:teamRole})});
    const d=await r.json();if(!r.ok)throw new Error(apiError(d));
    setInviteLink(d.url);announce("Invitation created. Share this link with the intended recipient.");
   }catch(e){announce(e instanceof Error?e.message:"Could not create invitation.",true);}
@@ -320,28 +286,20 @@ export default function Console({userId,email}:{userId:string;email:string}){
   const valid=new Set(["application/pdf","image/jpeg","image/png","text/plain","application/vnd.openxmlformats-officedocument.wordprocessingml.document"]);
   if(file.size<1||file.size>10485760||!valid.has(file.type))return announce("Choose a PDF, Word, TXT, PNG or JPG file under 10 MB.",true);
   setUploading(true);
-  const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,"_").slice(0,100);
-  const path=workspaceId+"/"+userId+"/"+crypto.randomUUID()+"-"+safeName;
   try{
-   const {error:uploadError}=await supabase.storage.from("btc-workspace-files").upload(path,file,{
-    upsert:false,contentType:file.type,cacheControl:"3600"
-   });
-   if(uploadError)throw uploadError;
-   const {error:saveError}=await supabase.from("attachments").insert({
-    workspace_id:workspaceId,uploader_id:userId,object_path:path,filename:file.name.slice(0,180),
-    mime_type:file.type,byte_size:file.size
-   });
-   if(saveError){await supabase.storage.from("btc-workspace-files").remove([path]);throw saveError;}
+   const {path,token}=await workspaceRequest<{path:string;token:string}>("file_upload",{workspace:workspaceId});
+   const {error}=await browserStorage().from("btc-workspace-files").uploadToSignedUrl(path,token,file,{contentType:file.type});
+   if(error)throw error;
+   await workspaceRequest("file_add",{workspace:workspaceId,path,filename:file.name.slice(0,180),mime:file.type,size:file.size});
    await refresh(workspaceId);announce("Document uploaded to private workspace storage.");
   }catch(e){announce(e instanceof Error?e.message:"Could not upload the document.",true);}
   finally{setUploading(false);}
  }
  async function openAttachment(file:Attachment){
   try{
-   const {data,error}=await supabase.storage.from("btc-workspace-files").createSignedUrl(file.object_path,60);
-   if(error||!data?.signedUrl)throw error||new Error("Document access was denied.");
+   const {signedPath}=await workspaceRequest<{signedPath:string}>("file_read",{id:file.id});
    const anchor=document.createElement("a");
-   anchor.href=data.signedUrl;anchor.rel="noopener noreferrer";anchor.target="_blank";
+   anchor.href=process.env.NEXT_PUBLIC_SUPABASE_URL+"/storage/v1"+signedPath;anchor.rel="noopener noreferrer";anchor.target="_blank";
    document.body.append(anchor);anchor.click();anchor.remove();
   }catch(e){announce(e instanceof Error?e.message:"Could not open document.",true);}
  }
@@ -349,10 +307,7 @@ export default function Console({userId,email}:{userId:string;email:string}){
   if(!confirm("Permanently remove this uploaded document?"))return;
   setSaving(true);
   try{
-   const {error:storageError}=await supabase.storage.from("btc-workspace-files").remove([file.object_path]);
-   if(storageError)throw storageError;
-   const {error:rowError}=await supabase.from("attachments").delete().eq("id",file.id);
-   if(rowError)throw rowError;
+   await workspaceRequest("file_remove",{id:file.id});
    await refresh(workspaceId);announce("Document deleted from workspace storage.");
   }catch(e){announce(e instanceof Error?e.message:"Could not delete the document.",true);}
   finally{setSaving(false);}
@@ -360,15 +315,21 @@ export default function Console({userId,email}:{userId:string;email:string}){
  async function saveProfile(e:React.FormEvent){
   e.preventDefault();setSaving(true);
   try{
-   const {error}=await supabase.rpc("btc_profile",{name:profileName.trim()});
-   if(error)throw error;await refresh(workspaceId);announce("Profile saved.");
+   await workspaceRequest("btc_profile",{name:profileName.trim()});
+   await refresh(workspaceId);announce("Profile saved.");
   }catch(e){announce(e instanceof Error?e.message:"Could not save profile.",true);}
   finally{setSaving(false);}
  }
- async function logOut(){await supabase.auth.signOut();location.replace("/login");}
+ async function logOut(){
+  try{
+   const response=await fetch("/api/account",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"logout"})});
+   if(!response.ok)throw new Error("Could not sign out. Try again.");
+   location.replace("/login");
+  }catch(e){announce(e instanceof Error?e.message:"Could not sign out.",true);}
+ }
  async function markNotification(id:number){
-  const {error}=await supabase.rpc("btc_notification",{n:id});
-  if(error)announce(error.message,true);else await refresh(workspaceId);
+  try{await workspaceRequest("btc_notification",{n:String(id)});await refresh(workspaceId);}
+  catch(e){announce(e instanceof Error?e.message:"Could not mark notification.",true);}
  }
  const connected=(provider:string)=>connections.find(c=>c.provider===provider&&c.owner_id===userId);
  const chooseView=(v:View)=>{setView(v);setSelectedFlow(null);setSearch("");setFilter("all");};
@@ -391,7 +352,7 @@ export default function Console({userId,email}:{userId:string;email:string}){
     <div className="bt-top-actions">
      <button className="bt-icon-button" aria-label="Refresh data" title="Refresh workspace" disabled={loading||!workspaceId} onClick={()=>void refresh(workspaceId)}><RefreshCw size={17} className={loading?"bt-spin":""}/></button>
      <button className="bt-icon-button" aria-label="View notifications" title="Notifications" onClick={()=>chooseView("approvals")}><Bell size={17}/>{notifications.some(n=>!n.read_at)&&<i className="bt-notification-dot"/>}</button>
-     <div className="bt-avatar">{(email[0]||"U").toUpperCase()}</div>
+     <div className="bt-avatar">{(username[0]||"U").toUpperCase()}</div>
     </div>
    </header>
    <aside className="bt-sidebar">
@@ -602,15 +563,15 @@ export default function Console({userId,email}:{userId:string;email:string}){
         {members.map(m=><div className="bt-person-line" key={m.user_id}><span className="bt-person-avatar">{displayName(m.user_id).slice(0,2).toUpperCase()}</span>
           <span><strong>{displayName(m.user_id)}</strong><small>{m.user_id===userId?"You":"Member"}</small></span><span className="bt-role">{m.role}</span></div>)}
        </section>
-       {isAdmin&&<section className="bt-card bt-invite-panel"><div className="bt-eyebrow">INVITE A COLLEAGUE</div><h2>Add a reviewer</h2><p>The invitation is tied to a specific email address and expires automatically.</p>
-        <form className="bt-inline-form" onSubmit={invite}><label>Email address<input required type="email" value={teamEmail} onChange={e=>setTeamEmail(e.target.value)} placeholder="colleague@company.com"/></label>
+       {isAdmin&&<section className="bt-card bt-invite-panel"><div className="bt-eyebrow">INVITE A COLLEAGUE</div><h2>Add a reviewer</h2><p>Choose the recipient’s existing username. Only that account can accept the invitation.</p>
+        <form className="bt-inline-form" onSubmit={invite}><label>Username<input required value={teamUsername} onChange={e=>setTeamUsername(e.target.value)} placeholder="colleague_username"/></label>
          <label>Role<select value={teamRole} onChange={e=>setTeamRole(e.target.value)}><option value="reviewer">Reviewer</option><option value="admin">Admin</option><option value="member">Member</option></select></label>
          <button className="bt-primary" disabled={saving}>Create invitation</button></form>
         {inviteLink&&<div className="bt-invite-link"><input readOnly aria-label="Invitation URL" value={inviteLink} onFocus={e=>e.currentTarget.select()}/>
          <button onClick={()=>{navigator.clipboard.writeText(inviteLink);announce("Invitation copied.");}}><Copy size={16}/> Copy link</button></div>}
        </section>}
       </>}
-      {view==="settings"&&<section className="bt-card bt-settings"><div className="bt-eyebrow">IDENTITY</div><h2>Your profile</h2><p>Email: {email}</p>
+      {view==="settings"&&<section className="bt-card bt-settings"><div className="bt-eyebrow">IDENTITY</div><h2>Your profile</h2><p>Username {username}</p>
        <form className="bt-inline-form" onSubmit={saveProfile}><label>Display name<input required minLength={1} maxLength={80} value={profileName} onChange={e=>setProfileName(e.target.value)} placeholder="Your name"/></label>
         <button disabled={saving} className="bt-primary">Save profile</button></form>
        <div className="bt-settings-footer"><span><LockKeyhole size={17}/> Secure authentication session</span><button className="bt-secondary" onClick={logOut}><LogOut size={15}/> Sign out</button></div>

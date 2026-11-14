@@ -3,15 +3,15 @@
 Before the Click is a human approval and verified-action platform for AI-assisted work.
 
 **Production:** https://before-the-click.vercel.app
-**Stack:** Next.js 15, React 19, TypeScript, Supabase Auth, Postgres RLS, Supabase Storage, Gemini, Vercel.
+**Stack:** Next.js 15, React 19, TypeScript, App-managed username accounts, Postgres RLS, Supabase Storage, Gemini, Vercel.
 
 ## Live product paths
 
 - / — landing page
-- /login — signup, login, password recovery
+- /login — username signup, password sign-in and code-based recovery
 - /console — authenticated workflow dashboard
 - /guide — process documentation
-- /auth/callback — sign-up verification
+- /auth/callback — redirects legacy sign-in links
 - /auth/reset — password reset
 - /join — reviewer invitations
 
@@ -32,9 +32,9 @@ Approved workspace-record actions are stored in Supabase and read back before re
 
 Copy `.env.example` to `.env.local` and configure the settings. Keep secrets out of Git. `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` are public. `BTC_SERVER_SECRET` is server-only and must match the singleton in `btc_private.server_configuration`. Generate and provision that value privately for a new database.
 
-- Drafting uses `GEMINI_API_KEY` on the server. `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` enable a fallback. Use a `:free` model that supports structured output and a provider that denies data collection.
+- Drafting uses `GEMINI_API_KEY` on the server. `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` enable a fallback. The default is `openrouter/free`. An optional `:free` model must support structured output and the configured provider data policy.
 - Google OAuth requires `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` in Vercel. Register `https://before-the-click.vercel.app/api/integrations/google/callback` with the OAuth client. Enable the Gmail, Calendar and Drive APIs in its Google Cloud project.
-- Public sign-up and recovery require custom SMTP in Supabase Auth. Keep email confirmation on and allow the `/auth/callback` URL and the callback query variants for sign-up, invitations and recovery. Verify email delivery with an address outside the Supabase project team.
+- The application owns username accounts, stores salted password hashes and hashed session tokens in private Postgres tables, and issues HTTP-only session cookies. Users save their recovery code at signup. Recovery rotates the code and revokes older sessions. Deploy `supabase/functions/btc-data` with gateway JWT checks disabled. The function authenticates each server request with a short-lived HMAC and applies existing RLS under the account UUID. Supabase Auth and SMTP are unnecessary.
 - Redeploy Vercel after adding production environment variables.
 
 ## Run and test

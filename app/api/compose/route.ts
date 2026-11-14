@@ -1,3 +1,4 @@
+import {requireSameOrigin} from "@/lib/auth-request";
 import { z } from "zod";
 import { authenticated } from "@/lib/btc-security";
 import { readJson, reply, requestError } from "@/lib/http";
@@ -14,6 +15,7 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
+  try { requireSameOrigin(request); } catch { return Response.json({error:"This request must come from Before the Click."},{status:403}); }
   if (!await authenticated()) return reply({error:"Sign in first."}, 401);
   try {
     const input = await readJson(request, schema, 24_000);

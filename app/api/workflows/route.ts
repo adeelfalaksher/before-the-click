@@ -1,3 +1,4 @@
+import {requireSameOrigin} from "@/lib/auth-request";
 import { z } from "zod";
 import { authenticated, jsonError, signedOperation } from "@/lib/btc-security";
 
@@ -46,6 +47,7 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
+  try { requireSameOrigin(request); } catch { return Response.json({error:"This request must come from Before the Click."},{status:403}); }
   const actor = await authenticated();
   if (!actor) return Response.json({error:"Sign in to create a workflow."},{status:401});
   try {
@@ -53,8 +55,7 @@ export async function POST(request: Request) {
     if(!parsed.success) return Response.json({error:parsed.error.issues[0]?.message||"Check the proposal fields."},{status:400});
     const data=parsed.data;
     const signed=signedOperation(actor.user.id,"proposal",data);
-    const result=await actor.supabase.rpc("btc_propose",signed);
-    if(result.error) throw result.error;
-    return Response.json({id:result.data},{status:201});
+    const id=await actor.data<string>("btc_propose",signed);
+    return Response.json({id},{status:201});
   } catch(e) { return jsonError(e); }
 }

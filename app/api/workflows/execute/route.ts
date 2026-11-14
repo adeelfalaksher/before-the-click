@@ -1,3 +1,4 @@
+import {requireSameOrigin} from "@/lib/auth-request";
 import { z } from "zod";
 import { authenticated, jsonError, signedOperation } from "@/lib/btc-security";
 import { executeGoogleAction, getToken, googleConfigured } from "@/lib/google";
@@ -5,28 +6,24 @@ import { executeGoogleAction, getToken, googleConfigured } from "@/lib/google";
 export const runtime="nodejs";
 const inputSchema=z.object({workflow:z.string().uuid()});
 export async function POST(request:Request) {
+  try { requireSameOrigin(request); } catch { return Response.json({error:"This request must come from Before the Click."},{status:403}); }
   const actor=await authenticated();
   if(!actor) return Response.json({error:"Sign in first."},{status:401});
   try {
     const {workflow}=inputSchema.parse(await request.json());
-    const {data:w,error:we}=await actor.supabase.from("workflows")
-      .select("id,workspace_id,created_by,current_version,status").eq("id",workflow).single();
-    if(we||!w||w.created_by!==actor.user.id) return Response.json({error:"Workflow not found."},{status:404});
+    const w=await actor.data<{id:string;workspace_id:string;created_by:string;current_version:number;status:string}|null>("workflow",{id:workflow});
+    if(!w||w.created_by!==actor.user.id) return Response.json({error:"Workflow not found."},{status:404});
     if(w.status!=="approved"&&w.status!=="completed") return Response.json({error:"Complete the required approvals first."},{status:409});
-    const {data:v,error:ve}=await actor.supabase.from("workflow_versions")
-      .select("id,version").eq("workflow_id",workflow).eq("version",w.current_version).single();
-    if(ve||!v) return Response.json({error:"The workflow version was not found."},{status:409});
-    const {data:action,error:ae}=await actor.supabase.from("proposed_actions")
-      .select("provider,operation,resource_id,document").eq("version_id",v.id).single();
-    if(ae||!action) return Response.json({error:"The proposed action was not found."},{status:409});
+    const v=await actor.data<{id:string}|null>("version",{workflow,version:w.current_version});
+    if(!v) return Response.json({error:"The workflow version was not found."},{status:409});
+    const action=await actor.data<{provider:string;operation:string;resource_id:string;document:unknown}|null>("proposal",{version:v.id});
+    if(!action) return Response.json({error:"The proposed action was not found."},{status:409});
 
     if(action.provider==="workspace"&&action.operation==="publish_record") {
       const signature=signedOperation(actor.user.id,"publish",{workflow,version:v.id});
-      const {data:id,error}=await actor.supabase.rpc("btc_publish_record",signature);
-      if(error) throw error;
-      const {data:verified,error:verifyError}=await actor.supabase.from("workspace_records")
-        .select("id,title,body,created_at").eq("id",id).eq("workspace_id",w.workspace_id).single();
-      if(verifyError||!verified) throw new Error("The record was saved but could not be independently verified.");
+      const id=await actor.data<string>("btc_publish_record",signature);
+      const verified=await actor.data("record",{id,workspace:w.workspace_id});
+      if(!verified)throw new Error("The record was saved but could not be independently verified.");
       return Response.json({status:"completed",reference:id,record:verified});
     }
 
@@ -38,8 +35,7 @@ export async function POST(request:Request) {
     const preflight=await getToken(actor,w.workspace_id,action.provider as "gmail"|"calendar"|"drive");
     if(preflight.account!==(action.document as {account?:string})?.account) return Response.json({error:"The approved account is not connected."},{status:409});
     const claim=signedOperation(actor.user.id,"execution",{intent:"claim",workflow,version:v.id});
-    const {data:run,error:claimError}=await actor.supabase.rpc("btc_execution",claim);
-    if(claimError) throw claimError;
+    const run=await actor.data<{id:string}>("btc_execution",claim);
     let status:"completed"|"failed"|"needs_verification"="needs_verification";
     let reference="";
     let detail:Record<string,unknown>={};
@@ -52,8 +48,7 @@ export async function POST(request:Request) {
     }
     const signed=signedOperation(actor.user.id,"execution",
       {intent:"finish",workflow,version:v.id,run:run.id,status,reference,detail});
-    const {error:finishError}=await actor.supabase.rpc("btc_execution",signed);
-    if(finishError) throw finishError;
+    await actor.data("btc_execution",signed);
     return Response.json({status,reference,detail},{status:status==="completed"?200:409});
   } catch(e) { return jsonError(e); }
 }

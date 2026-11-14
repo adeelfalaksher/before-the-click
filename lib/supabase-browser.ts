@@ -1,9 +1,9 @@
 "use client";
-import { createBrowserClient } from "@supabase/ssr";
+import {createClient} from "@supabase/supabase-js";
 
-export function browserSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !key) throw new Error("Supabase configuration is missing.");
-  return createBrowserClient(url, key);
+export function browserStorage(){
+  const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  if(!url||!key)throw new Error("File storage is unavailable.");
+  return createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}}).storage;
 }
