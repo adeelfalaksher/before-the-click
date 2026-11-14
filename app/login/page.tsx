@@ -4,6 +4,7 @@ import Link from "next/link";
 import {ArrowRight,CheckCircle2,LockKeyhole} from "lucide-react";
 import {browserSupabase} from "@/lib/supabase-browser";
 import {authDestination} from "@/lib/auth-destination";
+import {Brand} from "../ui";
 import "@/app/console/product.css";
 type Mode="login"|"signup"|"forgot";
 export default function Login(){
@@ -38,8 +39,8 @@ export default function Login(){
   }catch(e){setError(e instanceof Error?e.message:"Could not finish this request.");}
   finally{setBusy(false);}
  }
- return <main className="bt-auth-shell">
-   <div className="bt-auth-brand"><Link href="/" className="bt-wordmark"><span className="bt-symbol">b<span>.</span></span>before the click</Link>
+ return <main className="bt-auth-shell" id="main-content">
+   <div className="bt-auth-brand"><Brand />
      <Link href="/" className="bt-small-link">Back to website <ArrowRight size={14}/></Link>
    </div>
    <div className="bt-auth-grid">

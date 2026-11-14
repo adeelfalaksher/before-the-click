@@ -1,4 +1,3 @@
-/* Before the Click — bright editorial interface. No simulated metrics, no decorative cards. */
 :root{--bt-ink:#161b20;--bt-muted:#68717c;--bt-white:#fff;--bt-paper:#f8f9fa;--bt-line:#e6e9eb;--bt-blue:#2a51e8;--bt-navy:#141f39;--bt-good:#177a57;--bt-warn:#b96b1b;--bt-error:#bc3642}
 html{background:#fff}body{background:#fff!important;color:var(--bt-ink)!important;font-family:"DM Sans Variable","DM Sans",Arial,sans-serif}
 .bt-app,.bt-auth-shell,.bt-reset,.bt-marketing{color:var(--bt-ink);font-size:14px;line-height:1.55;letter-spacing:-.01em}
@@ -243,10 +242,6 @@ html{background:#fff}body{background:#fff!important;color:var(--bt-ink)!importan
 .bt-diagram-top span{display:flex;align-items:center;gap:9px}
 .bt-diagram-top i{height:7px;width:7px;background:#46ae8c;border-radius:50%}
 .bt-diagram-main{padding:25px}
-.bt-preview-choices{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:22px}
-.bt-preview-choices button{border:1px solid transparent;border-radius:6px;background:#f5f7fa;color:#485463;padding:7px 10px;font-size:12px}
-.bt-preview-choices button:hover{border-color:#b0bfff}
-.bt-preview-choices button[aria-pressed=true]{background:#e8eefd;color:#243e96;border-color:#cbd6fe}
 .bt-diagram-action{display:flex;align-items:center;gap:13px;border-bottom:1px solid #edf0f2;padding-bottom:19px}
 .bt-diagram-action>span{width:42px;height:42px;background:#ebefff;border-radius:8px;display:grid;place-items:center;color:#2e4f9f}
 .bt-diagram-action strong{font-size:13px}
@@ -321,3 +316,51 @@ html{background:#fff}body{background:#fff!important;color:var(--bt-ink)!importan
 @keyframes bt-spin{to{transform:rotate(360deg)}}
 .bt-spinning{animation:bt-spin .8s linear infinite}
 @media(max-width:680px){.bt-resource-item{flex-direction:column;align-items:flex-start}.bt-resource-actions{width:100%}}
+
+/* Carry the original stone and paper palette through the live workspace. */
+:root{--bt-ink:var(--ink);--bt-muted:var(--muted);--bt-white:var(--white);--bt-paper:var(--paper);--bt-line:var(--line);--bt-blue:#72520e;--bt-navy:#30271b}
+body{background:var(--canvas)!important}
+.bt-app{grid-template-columns:194px minmax(0,1fr);grid-template-rows:auto 1fr;background:var(--canvas)}
+.bt-topbar{grid-column:1/-1;height:71px;justify-content:flex-start;gap:18px;background:#fbf9f4;padding:0 31px}
+.bt-top-actions{margin-left:auto}
+.bt-breadcrumb{border-left:1px solid var(--line);padding-left:17px;color:var(--muted)}
+.bt-avatar{background:#e9dfcb;color:#675939}
+.bt-sidebar{height:calc(100vh - 71px);background:#f7f3ea;padding:20px 13px 14px}
+.bt-workspace-control,.bt-icon-button{background:var(--white);border-color:var(--line)}
+.bt-side-nav button{color:#3e372c}
+.bt-side-nav button:hover,.bt-side-nav button.active{background:#e8e0cf;color:#2a2318}
+.bt-side-nav button small{background:#f6edcb;color:#6c500d}
+.bt-main{width:min(1400px,calc(100% - 64px));min-height:calc(100vh - 71px)}
+.bt-page-heading h1{font-size:clamp(2.7rem,4.4vw,4.6rem)}
+.bt-primary,.bt-secondary{border-radius:999px}
+.bt-primary:hover{background:#484133;border-color:#484133}
+.bt-secondary,.bt-card,.bt-table-row,.bt-flow-line,.bt-auth-panel{background:var(--white);border-color:var(--line)}
+.bt-secondary:hover,.bt-table-row:hover,.bt-flow-line:hover,.bt-icon-button:hover{background:#f2ecde;border-color:#bcb09d}
+.bt-method,.bt-table-caption,.bt-preview,.bt-decision-bar,.bt-execute-box{background:#f7f3ea;border-color:var(--line)}
+.bt-first-run{background:#f0e6d8;isolation:isolate;position:relative}
+.bt-first-run::before{content:"";position:absolute;inset:0 0 0 50%;z-index:-1;background:url("/architecture.webp") center / cover no-repeat;mix-blend-mode:multiply;mask-image:linear-gradient(90deg,transparent,#000 40%)}
+.bt-first-run p{max-width:420px}
+.bt-review-section .approval-title h2{font-weight:700}
+.bt-ordered-approval summary{cursor:pointer;min-height:32px;list-style:none}
+.bt-ordered-approval summary::-webkit-details-marker{display:none}
+.bt-ordered-approval summary::marker{content:""}
+.bt-review-section .bt-decision-bar{margin-top:16px}
+.bt-map-select{margin:0 0 17px auto}
+.bt-app .map-toolbar>span,.bt-app .map-bottom>span{min-width:0;overflow-wrap:anywhere}
+.bt-auth-shell .bt-auth-message h1 em{color:#67543b}
+.bt-auth-brand .brand{font-size:clamp(.72rem,1.45vw,.94rem)}
+@media(max-width:760px){
+ .bt-app{display:block}
+ .bt-topbar{padding:0 15px;height:62px}
+ .bt-breadcrumb{display:none}
+ .bt-sidebar{height:auto;padding:10px 13px}
+ .bt-main{width:calc(100% - 32px)}
+ .bt-first-run::before{display:none}
+ .bt-map-select{width:100%}
+}
+@media(max-width:390px){
+ .bt-topbar{gap:8px}
+ .bt-top-actions{gap:5px}
+ .bt-topbar .brand-mark{width:27px;height:27px}
+ .bt-topbar .bt-avatar{display:none}
+}

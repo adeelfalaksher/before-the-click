@@ -10,10 +10,10 @@ export function Brand({ footer = false }: { footer?: boolean }) {
 
 export function SiteFooter() {
   return <footer className="site-footer"><div className="footer-wrap">
-    <div className="footer-brand"><Brand footer /><p>A workspace for rehearsing agent decisions.</p></div>
+    <div className="footer-brand"><Brand footer /><p>A workspace for reviewing and approving agent actions.</p></div>
     <nav aria-label="Footer">
-      <Link href="/workspace">Workspace <ArrowUpRight size={13} /></Link>
-      <Link href="/workspace?view=map">Simulator <ArrowUpRight size={13} /></Link>
+      <Link href="/console">Workspace <ArrowUpRight size={13} /></Link>
+      <Link href="/console?view=map">Simulator <ArrowUpRight size={13} /></Link>
       <Link href="/guide">Field guide <ArrowUpRight size={13} /></Link>
     </nav>
     <span className="footer-copyright">Before the Click © 2026</span>

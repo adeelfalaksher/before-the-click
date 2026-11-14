@@ -4,15 +4,17 @@ import {useCallback,useEffect,useMemo,useState} from "react";
 import Link from "next/link";
 import {
  Activity,ArrowDownRight,ArrowRight,ArrowUpRight,Bell,Check,CheckCircle2,ChevronDown,Download,
- ChevronRight,Clock3,FileText,FolderClosed,Inbox,KeyRound,LayoutDashboard,LogOut,
+ ChevronRight,Clock3,FileText,FolderClosed,Inbox,KeyRound,Layers,LayoutDashboard,LogOut,
  Mail,Plus,RefreshCw,Search,Settings2,ShieldCheck,Sparkles,Users,Workflow,
  X,CalendarDays,ExternalLink,LockKeyhole,Send,AlertTriangle,Copy
 } from "lucide-react";
 import {browserSupabase} from "@/lib/supabase-browser";
 import {ResourceBrowser} from "./resource-browser";
 import {extractEmailAddress} from "@/lib/resource-picker";
+import {Brand} from "../ui";
+import {ActionMap} from "./action-map";
 
-type View="overview"|"workflows"|"approvals"|"records"|"integrations"|"policies"|"audit"|"team"|"settings";
+type View="overview"|"workflows"|"approvals"|"map"|"records"|"integrations"|"policies"|"audit"|"team"|"settings";
 type W={id:string;name:string;owner_id:string;created_at:string};
 type Member={workspace_id:string;user_id:string;role:string};
 type Person={id:string;display_name:string};
@@ -30,7 +32,7 @@ type Notice={text:string;bad?:boolean};
 type Provider="workspace"|"gmail"|"calendar"|"drive";
 const menu:{id:View;label:string;icon:typeof LayoutDashboard}[]=[
  {id:"overview",label:"Overview",icon:LayoutDashboard},{id:"workflows",label:"Workflows",icon:Workflow},
- {id:"approvals",label:"Approvals",icon:CheckCircle2},{id:"records",label:"Saved records",icon:FileText},
+ {id:"approvals",label:"Approvals",icon:CheckCircle2},{id:"map",label:"Simulator",icon:Layers},{id:"records",label:"Saved records",icon:FileText},
  {id:"integrations",label:"Integrations",icon:KeyRound},{id:"policies",label:"Policies",icon:ShieldCheck},
  {id:"audit",label:"Audit log",icon:Activity},{id:"team",label:"Team",icon:Users},{id:"settings",label:"Settings",icon:Settings2}
 ];
@@ -67,6 +69,7 @@ export default function Console({userId,email}:{userId:string;email:string}){
  const [initializing,setInitializing]=useState(true),[loading,setLoading]=useState(false),[saving,setSaving]=useState(false),[uploading,setUploading]=useState(false);
  const [notice,setNotice]=useState<Notice|null>(null),[createWorkspace,setCreateWorkspace]=useState(false),[workspaceName,setWorkspaceName]=useState("");
  const [createFlow,setCreateFlow]=useState(false),[selectedFlow,setSelectedFlow]=useState<string|null>(null),[confirmExecute,setConfirmExecute]=useState<string|null>(null);
+ const [mapFlow,setMapFlow]=useState("");
  const [search,setSearch]=useState(""),[filter,setFilter]=useState("all");
  const [config,setConfig]=useState({google:false,gemini:false,openrouter:false});
  const [composer,setComposer]=useState({
@@ -85,6 +88,12 @@ export default function Console({userId,email}:{userId:string;email:string}){
  const selectedSteps=version?steps.filter(s=>s.version_id===version.id).sort((a,b)=>a.position-b.position):[];
  const selectedDecisions=version?decisions.filter(d=>d.version_id===version.id):[];
  const nextReviewer=selectedSteps.find(s=>!selectedDecisions.some(d=>d.position===s.position));
+ const mapped=flows.find(f=>f.id===mapFlow)??flows[0];
+ const mapVersion=mapped&&versions.find(v=>v.workflow_id===mapped.id&&v.version===mapped.current_version);
+ const mapAction=mapVersion&&actions.find(a=>a.version_id===mapVersion.id);
+ const mapSteps=mapVersion?steps.filter(s=>s.version_id===mapVersion.id):[];
+ const mapApprovals=mapVersion?decisions.filter(d=>d.version_id===mapVersion.id&&d.decision==="approved"):[];
+ const mapReceipt=mapped&&audit.find(event=>event.workflow_id===mapped.id&&event.event==="execution.completed")?.detail.reference;
  const currentMembership=memberships.find(m=>m.workspace_id===workspaceId);
  const displayName=(id:string)=>people.find(p=>p.id===id)?.display_name|| (id===userId?email:idLabel(id));
  const assignedReviewers=members.filter(m=>["owner","admin","reviewer"].includes(m.role)&&(m.user_id!==userId||policy?.allow_self_approval===true));
@@ -161,7 +170,8 @@ export default function Console({userId,email}:{userId:string;email:string}){
  useEffect(()=>{if(workspaceId)void refresh(workspaceId);},[workspaceId,refresh]);
  useEffect(()=>{
   const p=new URLSearchParams(location.search),v=p.get("view");
-  if(v==="integrations")setView("integrations");
+  const initialView=menu.find(item=>item.id===v);
+  if(initialView)setView(initialView.id);
   if(p.get("connected"))announce("Google account connected.");
   if(p.get("error"))announce(p.get("error")==="google-config"?"Google OAuth needs client credentials.":"Could not connect Google: "+p.get("error"),true);
   if(p.get("connected")||p.get("error"))history.replaceState({}, "", "/console?view=integrations");
@@ -366,6 +376,7 @@ export default function Console({userId,email}:{userId:string;email:string}){
   overview:["Your control center.","Every action has an owner, a decision and a record."],
   workflows:["Workflows.","A clear record of what is proposed and what actually happens."],
   approvals:["Your decisions.","Review only the requests assigned to you."],
+  map:["Simulator map","Inspect the proposal, review order, execution status and receipt for a workflow."],
   records:["Verified records.","Content saved after a completed approval sequence."],
   integrations:["Connected accounts.","Only authorized services can receive an action."],
   policies:["Rules of engagement.","Deterministic controls applied on the server before execution."],
@@ -374,8 +385,16 @@ export default function Console({userId,email}:{userId:string;email:string}){
   settings:["Your settings.","Maintain your identity and secure workspace access."]
  };
  return <div className="bt-app">
+   <header className="bt-topbar">
+    <Brand />
+    <div className="bt-breadcrumb">Workspace <ChevronRight size={14}/><span>{menu.find(x=>x.id===view)?.label}</span></div>
+    <div className="bt-top-actions">
+     <button className="bt-icon-button" aria-label="Refresh data" title="Refresh workspace" disabled={loading||!workspaceId} onClick={()=>void refresh(workspaceId)}><RefreshCw size={17} className={loading?"bt-spin":""}/></button>
+     <button className="bt-icon-button" aria-label="View notifications" title="Notifications" onClick={()=>chooseView("approvals")}><Bell size={17}/>{notifications.some(n=>!n.read_at)&&<i className="bt-notification-dot"/>}</button>
+     <div className="bt-avatar">{(email[0]||"U").toUpperCase()}</div>
+    </div>
+   </header>
    <aside className="bt-sidebar">
-    <Link href="/" className="bt-wordmark"><span className="bt-symbol">b<span>.</span></span><span>before the click</span></Link>
     <div className="bt-workspace-control">
      <span className="bt-eyebrow">CURRENT WORKSPACE</span>
      <select aria-label="Choose workspace" value={workspaceId} onChange={e=>{setWorkspaceId(e.target.value);setSelectedFlow(null);}} disabled={!workspaces.length}>
@@ -385,11 +404,11 @@ export default function Console({userId,email}:{userId:string;email:string}){
     </div>
     <div className="bt-nav-label">WORK</div>
     <nav className="bt-side-nav" aria-label="Workspace">
-     {menu.slice(0,4).map(({id,label,icon:Icon})=><button key={id} className={view===id?"active":""} onClick={()=>chooseView(id)}>
+     {menu.slice(0,5).map(({id,label,icon:Icon})=><button key={id} className={view===id?"active":""} onClick={()=>chooseView(id)}>
       <Icon size={18} strokeWidth={1.8}/><span>{label}</span>{id==="approvals"&&mine.length>0&&<small>{mine.length}</small>}
      </button>)}
      <div className="bt-nav-label">CONTROL & ACCOUNT</div>
-     {menu.slice(4).map(({id,label,icon:Icon})=><button key={id} className={view===id?"active":""} onClick={()=>chooseView(id)}>
+     {menu.slice(5).map(({id,label,icon:Icon})=><button key={id} className={view===id?"active":""} onClick={()=>chooseView(id)}>
       <Icon size={18} strokeWidth={1.8}/><span>{label}</span>
      </button>)}
     </nav>
@@ -398,15 +417,7 @@ export default function Console({userId,email}:{userId:string;email:string}){
     </div>
    </aside>
    <div className="bt-content">
-    <header className="bt-topbar">
-     <div className="bt-breadcrumb">Workspace <ChevronRight size={14}/><span>{menu.find(x=>x.id===view)?.label}</span></div>
-     <div className="bt-top-actions">
-      <button className="bt-icon-button" aria-label="Refresh data" title="Refresh workspace" disabled={loading} onClick={()=>void refresh(workspaceId)}><RefreshCw size={17} className={loading?"bt-spin":""}/></button>
-      <button className="bt-icon-button" aria-label="View notifications" title="Notifications" onClick={()=>chooseView("approvals")}><Bell size={17}/>{notifications.some(n=>!n.read_at)&&<i className="bt-notification-dot"/>}</button>
-      <div className="bt-avatar">{(email[0]||"U").toUpperCase()}</div>
-     </div>
-    </header>
-    <main className="bt-main">
+    <main className="bt-main" id="main-content">
      <div className="bt-page-heading"><div><span className="bt-eyebrow">BEFORE THE CLICK / {view.toUpperCase()}</span>
       <h1>{sectionTitles[view][0]}</h1><p>{sectionTitles[view][1]}</p></div>
       {workspaceId&&!["settings","team","policies","audit"].includes(view)&&
@@ -444,6 +455,19 @@ export default function Console({userId,email}:{userId:string;email:string}){
         <div className="bt-empty in-card">No workflows yet. Create one to start your audit trail.</div>}
        </section>
       </>}
+      {view==="map"&&(mapped?<>
+       <label className="field run-select bt-map-select">Workflow<select value={mapped.id} onChange={e=>setMapFlow(e.target.value)}>
+        {flows.map(flow=><option key={flow.id} value={flow.id}>{flow.title}</option>)}
+       </select></label>
+       <ActionMap key={`${mapped.id}:${mapped.current_version}`} title={mapped.title} status={statusNames[mapped.status]||mapped.status}
+        details={[
+         <div className="source-note" key="proposal"><strong>{mapAction?.document?.proposal?.subject||mapped.title}</strong><p>{mapVersion?.objective||"Loading proposal details…"}</p><p>{mapAction?.provider==="workspace"?"Workspace record":mapAction?.document?.account}</p></div>,
+         <p key="approval">{mapApprovals.length} of {mapSteps.length} reviewers approved version {mapped.current_version}.</p>,
+         <p key="execution">{statusNames[mapped.status]||mapped.status}. {mapped.status==="approved"?"The workflow owner can execute this version from the approval queue.":null}</p>,
+         <p key="verification">{mapped.status==="completed"?mapReceipt?`Verified. Reference ${String(mapReceipt)}.`:"Verified. See the workspace audit log for the receipt.":mapped.status==="needs_verification"?"The provider outcome needs verification.":"A receipt appears here after successful execution."}</p>
+        ]}
+        onReview={()=>{setSelectedFlow(mapped.id);setView("workflows");}}/>
+      </>:<section className="bt-card bt-empty in-card"><strong>No workflows to inspect yet.</strong><button className="bt-secondary" onClick={startWorkflow}>Create a workflow <ArrowRight size={15}/></button></section>)}
       {view==="workflows"&& !selected&&<>
        <div className="bt-toolbar"><label className="bt-search"><Search size={17}/><input placeholder="Search workflows" value={search} onChange={e=>setSearch(e.target.value)}/></label>
         <select value={filter} onChange={e=>setFilter(e.target.value)} aria-label="Filter status"><option value="all">All statuses</option>
@@ -474,15 +498,35 @@ export default function Console({userId,email}:{userId:string;email:string}){
          <div className="bt-preview"><span className="bt-eyebrow">EXACT APPROVED CONTENT</span><h3>{action.document?.proposal?.subject||"No subject"}</h3>
           <pre>{action.document?.proposal?.body||""}</pre></div>
         </div>}
-        <div className="bt-review-section"><div className="bt-eyebrow">REVIEW SEQUENCE</div>
-         {selectedSteps.map((s,i)=>{const d=selectedDecisions.find(d=>d.position===s.position);
-          return <div key={s.position} className="bt-review-line"><span className="bt-index">0{i+1}</span><div><strong>{displayName(s.reviewer_id)}</strong><small>{members.find(m=>m.user_id===s.reviewer_id)?.role||"Reviewer"}</small></div>
-            <span className="bt-muted">{d?d.decision.replace("_"," "):nextReviewer?.position===s.position?"Up next":"Waiting"}</span>
-            {d&&<small>{d.comment||pretty(d.created_at)}</small>}</div>;
-         })}
+        <div className="bt-review-section approval-backdrop">
+         <section className="approval-paper" aria-label="Ordered approvals">
+          <div className="approval-title"><span className="approval-icon"><Clock3 size={19}/></span><div>
+           <h2>{selected.status==="awaiting_approval"&&nextReviewer?nextReviewer.reviewer_id===userId?"Waiting on your review":`${displayName(nextReviewer.reviewer_id)} is up next`:statusNames[selected.status]||"Review sequence"}</h2>
+           <p>{selectedDecisions.filter(d=>d.decision==="approved").length} of {selectedSteps.length} approved</p>
+          </div></div>
+          <details open className="bt-ordered-approval">
+           <summary className="ordered-label">Review in order</summary>
+           <div className="reviewer-list">
+            {selectedSteps.map((step,i)=>{
+             const decision=selectedDecisions.find(d=>d.position===step.position);
+             const active=selected.status==="awaiting_approval"&&nextReviewer?.position===step.position;
+             const name=displayName(step.reviewer_id);
+             const label=decision?{approved:"Approved",rejected:"Rejected",changes_requested:"Changes requested"}[decision.decision]:active?"Awaiting review":selected.status==="awaiting_approval"?"Waiting in order":"Closed";
+             return <div key={step.position} className={"reviewer-row"+(active?" active":"")}>
+              <span className={`avatar avatar-${i%4}`} aria-hidden="true">{name.split(/\s+/).slice(0,2).map(part=>part[0]).join("").toUpperCase()}</span>
+              <div className="reviewer-info"><div><b>{name}</b><small>{members.find(m=>m.user_id===step.reviewer_id)?.role||"Reviewer"}</small></div>
+               {decision&&<p>{decision.comment||pretty(decision.created_at)}</p>}</div>
+              <span className={"status-tag "+(decision?.decision==="approved"?"green":decision?.decision==="rejected"?"red":active?"amber":"neutral")}>
+               {label} {decision?.decision==="approved"?<Check size={12}/>:active?<Clock3 size={12}/>:null}</span>
+             </div>;
+            })}
+           </div>
+          </details>
+          {selected.status==="awaiting_approval"&&nextReviewer?.reviewer_id===userId&&
+           <ReviewButtons busy={saving} onDecide={(choice,note)=>decide(selected,choice,note)}/>}
+         </section>
         </div>
-        {selected.status==="awaiting_approval"&&nextReviewer?.reviewer_id===userId&&
-         <ReviewButtons busy={saving} onDecide={(choice,note)=>decide(selected,choice,note)}/>}
+        <div className="bt-revision-action"><button className="bt-secondary" onClick={()=>{setMapFlow(selected.id);chooseView("map");}}>Inspect on map <ArrowRight size={15}/></button></div>
         {selected.status==="approved"&&selected.created_by===userId&&
          <div className="bt-execute-box"><div><strong>Approved. Ready for execution.</strong><p>The server will re-check permissions, policy and the exact workflow version.</p></div>
           <button className="bt-primary" disabled={saving} onClick={()=>setConfirmExecute(selected.id)}>Execute action <ArrowRight size={17}/></button></div>}
