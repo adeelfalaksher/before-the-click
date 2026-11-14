@@ -1,25 +1,26 @@
-import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
-import { Brand, SiteFooter } from "../ui";
-
-export const metadata: Metadata = { title: "Field guide" };
-
-const questions = [
-  ["What’s a rehearsal?", "A rehearsal is a test of a proposed agent plan. It works on sample records or records you write into the workspace. A run can change those sandbox records and generate drafts. Live inboxes, calendars, and file stores are outside the workspace."],
-  ["How do approvals work?", "Start with a plan, then put reviewers in order. The active reviewer can approve, request changes, or reject the plan. A revision sends the plan back to the first reviewer. The simulator unlocks once everyone has approved."],
-  ["How do I invite someone?", "Go to Approvals and choose Share for review. Send each reviewer their individual link. Each link can record a decision only for its assigned reviewer. Links expire after 14 days. Refresh the queue to retrieve new decisions, or close the links to end access."],
-  ["Where is my work saved?", "Your working copy, preferences and audit records are saved in this browser. Shared review packets live separately in private storage and exclude details from sources marked private. Use a workspace backup to move your work to another browser."],
-  ["What is sent to Gemini?", "Gemini receives the goal and ordinary source records only when you choose Gemini planning. The planner substitutes a placeholder for records marked private. Keep confidential information out of the goal. Guided plans are built in your browser."],
-  ["Can I try a different outcome?", "Duplicate a rehearsal from History to run a comparison. Keep the original as an audit record, change the action plan or sandbox rules, then review and rehearse the new version."]
+import {ArrowRight,CheckCircle2,ShieldCheck} from "lucide-react";
+import "../console/product.css";
+const sections=[
+ ["1. Start securely","Register an account and verify your email. Create a workspace that will contain members, policies, actions and audit history."],
+ ["2. Create a proposal","Choose an action, describe the desired result and write its exact content. Gemini can prepare a draft, which must be reviewed and edited by a person."],
+ ["3. Choose reviewers","Assign authorized workspace members to an ordered approval queue. Each approval applies only to the current immutable workflow version."],
+ ["4. Apply workspace policies","Administrators control permitted external actions and whether a workflow owner can self-approve. Server rules apply to the final execution, not just the interface."],
+ ["5. Execute only after approval","Once all reviewers approve, the workflow owner explicitly submits the operation. The application checks the current account, permission and policy before execution."],
+ ["6. Verify the outcome","Successful workspace actions create persistent records. Connected providers return operation identifiers, which the application checks before reporting completion."],
+ ["7. Review the audit trail","Inspect creation, approval, denial and execution events in the workspace ledger. An uncertain external result must be investigated rather than blindly repeated."]
 ];
-
-export default function Guide() {
-  return <><header className="simple-header"><Brand /><Link href="/workspace" className="button dark">Open workspace <ArrowRight size={16} /></Link></header>
-    <main id="main-content" className="guide-main page-width">
-      <div className="section-kicker">FIELD GUIDE</div><h1>Run your first rehearsal.</h1>
-      <p className="lede">Choose a task, inspect the proposed actions, review the plan, and see what happens when you run it.</p>
-      <Link className="button dark" href="/workspace?new=1">Choose a scenario <ArrowRight size={17} /></Link>
-      <div className="guide-questions">{questions.map(([question, answer]) => <details key={question}><summary>{question}</summary><p>{answer}</p></details>)}</div>
-    </main><SiteFooter /></>;
+export default function Guide(){
+ return <main className="bt-marketing" id="main-content">
+  <header className="bt-landing-header"><Link href="/" className="bt-wordmark"><span className="bt-symbol">b<span>.</span></span>before the click</Link>
+   <nav className="bt-landing-nav"><Link href="/">Home</Link></nav><Link href="/console" className="bt-primary">Open workspace <ArrowRight size={16}/></Link></header>
+  <section className="bt-proof-section" style={{maxWidth:1100,margin:"auto"}}>
+   <span className="bt-eyebrow">PRODUCT FIELD GUIDE</span><h1 style={{fontFamily:"Instrument Serif, Georgia, serif",fontSize:"clamp(50px,6vw,78px)",fontWeight:400,maxWidth:790,margin:"20px 0"}}>Every action, from proposal to proof.</h1>
+   <p style={{fontSize:16,maxWidth:700,marginBottom:40}}>Before the Click provides an approval and execution boundary for work assisted by AI. AI writes drafts; human reviewers authorize the exact action; the server verifies what really happened.</p>
+   {sections.map(([title,body])=><article key={title} style={{display:"grid",gridTemplateColumns:"minmax(0,240px) 1fr",gap:25,padding:"22px 0",borderTop:"1px solid #e3e7ed"}}>
+    <h2 style={{fontFamily:"DM Sans Variable,Arial,sans-serif",fontSize:17,fontWeight:700,margin:0}}>{title}</h2><p>{body}</p></article>)}
+   <p style={{marginTop:25}}>External Google services require OAuth authorization. Access to particular Gmail and Drive permissions may require Google verification. An unavailable integration must never appear connected.</p>
+   <Link href="/console" className="bt-primary" style={{marginTop:24}}>Manage your actions <ArrowRight size={16}/></Link>
+  </section>
+ </main>;
 }

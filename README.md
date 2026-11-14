@@ -1,52 +1,45 @@
 # Before the Click
 
-Before the Click is a rehearsal workspace for founder teams. Start with launch-week inbox triage, a calendar clash, or a shared folder. Inspect a proposed plan, gather human decisions in order, and run it against sandbox records. The audit shows which actions applied, which a rule blocked, and what changed.
+Before the Click is a human approval and verified-action platform for AI-assisted work.
 
-- [Open the workspace](https://before-the-click.vercel.app/workspace)
-- [Read the field guide](https://before-the-click.vercel.app/guide)
+**Production:** https://before-the-click.vercel.app
+**Stack:** Next.js 15, React 19, TypeScript, Supabase Auth, Postgres RLS, Supabase Storage, Gemini, Vercel.
 
-## Run locally
+## Live product paths
 
-Use Node.js 22.18 or later in the Node.js 22 line.
+- / — landing page
+- /login — signup, login, password recovery
+- /console — authenticated workflow dashboard
+- /guide — process documentation
+- /auth/callback — sign-up verification
+- /auth/reset — password reset
+- /join — reviewer invitations
 
-```sh
-npm ci
-npm test
-npm run dev
-```
+Previous workspace, review and studio URLs redirect to the authenticated application.
 
-Open [localhost:3000](http://localhost:3000). Local development uses temporary-file review storage when a Blob store is absent. Set `BTC_DEV_REVIEW_DIR` to choose a different local directory. Private review storage is required in production.
+## Real workflows
 
-## Production
+1. Create a workspace and invite reviewers.
+2. Write a proposal, or use optional Gemini drafting and edit its exact content.
+3. Submit an immutable version to ordered reviewers.
+4. Approve, reject or request changes. A revision always resets previous approvals.
+5. Apply administrator policies separately from the AI.
+6. Execute the approved action on the server, then verify and audit it.
 
-Deploy as a Next.js project on Vercel. Connect a **private** Vercel Blob store for review packets and request counters. Vercel supplies the storage credentials through a linked read-write token or OIDC configuration.
+Approved workspace-record actions are stored in Supabase and read back before reporting success. Private team documents use a membership-restricted bucket. Google Gmail, Calendar and Drive connectors contain real OAuth and API execution paths, but REQUIRE Google Cloud OAuth credentials, user consent, scoped access and separate end-to-end verification before being considered operational.
 
-To enable Gemini planning, add `GEMINI_API_KEY` as a **sensitive Production** variable on the existing Vercel project and redeploy. `GEMINI_MODEL` is optional and defaults to `gemini-3.1-flash-lite`. The guided planner runs locally in the browser and is available before Gemini setup.
+## Environment
 
-## What reviewers can do
+Copy .env.example to .env.local and configure the settings; never commit secrets. NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY are public. BTC_SERVER_SECRET is server-only and must match the secret configured in the dedicated Supabase database. GEMINI_API_KEY is optional and server-only. GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI are required for Google integrations.
 
-- Review in the workspace or share a separate link for each pending reviewer.
-- Approve, request changes, or reject when the reviewer’s turn arrives.
-- Refresh the owner’s queue to load shared decisions. Closing the links keeps previously recorded decisions.
-- Edit the request and restart the review, compare a duplicate plan, or archive and download a completed rehearsal.
+## Run and test
 
-Review links expire after 14 days. Anyone holding a link can act for that reviewer, so send it directly. Shared packets exclude the details of sources marked private. Browser backups contain rehearsal records and guardrail settings. Invitations stay in the originating browser.
+Requires Node.js 22.x. Run npm ci, npm run dev, npm test, npm run typecheck, and npm run build.
 
-## Architecture
+The Supabase project already has existing governance and workspace_records migrations. The private-attachments migration is checked into supabase/migrations. Preserve those existing database objects during deploys.
 
-```mermaid
-flowchart TD
-  W["Workspace and local records"] --> P["Guided or Gemini planner"]
-  P --> R["Ordered human review"]
-  R <-->|"Reviewer links"| B["Private review storage"]
-  R --> S["Sandbox and guardrails"]
-  S --> A["Audit and backup"]
-```
+The eight existing regression tests cover the original deterministic workflow logic. A successful build does not establish that external Google actions or email verification have been tested. Each Google integration must be verified with authorized test accounts before being advertised as available.
 
-The simulator applies allowlisted operations to copied sandbox records in order. It produces drafts, state changes and a record of each outcome. It has no dispatch connection to a live inbox, calendar, or file provider.
+## Security
 
-## Runtime and privacy
-
-The guided planner uses browser rules and needs no model. Gemini makes one model request per generated plan. For a free-access competition submission, configure a Google AI Studio free-tier key and verify the current model quota. The server substitutes placeholders for sensitive sources before calling the model. Users should keep confidential details out of the goal and any sources they share. The proposal validator limits actions to existing records and the operations allowed for the scenario.
-
-Codex assisted with implementation and testing. OpenAI image generation supplied the limestone sculpture and campus illustration. These tools are not called by the running site.
+Authenticated routes protect personal data. SQL row-level security isolates workspaces. Sensitive credentials are encrypted in a private database schema. Each execution is guarded by a policy-checked, version-matched database claim. A provider result that cannot be independently verified is not recorded as completed; do not automatically retry ambiguous external actions.
