@@ -47,15 +47,16 @@ export async function writeDraft(input: DraftInput, providers: ReturnType<typeof
     } catch { /* The configured fallback can still return a draft. */ }
   }
   if (providers.openrouter) {
+    let providerError: RequestError | undefined;
     try {
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method:"POST", headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.OPENROUTER_API_KEY},
-        signal:AbortSignal.timeout(8_000), cache:"no-store",
+        signal:AbortSignal.timeout(10_000), cache:"no-store",
         body:JSON.stringify({
           model:openRouterModel(),max_tokens:1000,
           messages:[{role:"system",content:instruction},{role:"user",content}],
-          response_format:{type:"json_schema",json_schema:{name:"draft",strict:true,schema:responseSchema}},
-          provider:{require_parameters:true,data_collection:"deny",max_price:{prompt:0,completion:0,request:0}}
+          response_format:{type:"json_object"},
+          provider:{require_parameters:true,data_collection:"deny",max_price:{prompt:0,completion:0}}
         })
       });
       limited ||= response.status === 429;
@@ -63,7 +64,18 @@ export async function writeDraft(input: DraftInput, providers: ReturnType<typeof
         const result = await response.json();
         return {...draftSchema.parse(JSON.parse(result.choices?.[0]?.message?.content??"")), provider:"OpenRouter"};
       }
-    } catch { /* Keep the editor available even if both providers fail. */ }
+      console.warn("OpenRouter drafting response",response.status);
+      if (response.status===401||response.status===403) {
+        providerError=new RequestError(503,"OpenRouter rejected the current production key or its permissions.");
+      } else if (response.status===402) {
+        providerError=new RequestError(503,"OpenRouter requires an account balance for this request. Choose Automatic or enter your draft.");
+      } else if (response.status===404) {
+        providerError=new RequestError(503,"OpenRouter has no free endpoint for this request under the current provider settings.");
+      }
+    } catch {
+      console.warn("OpenRouter drafting request failed or returned an invalid draft.");
+    }
+    if(providerError)throw providerError;
   }
   if (limited) throw new RequestError(429,"AI drafting reached its usage limit. Try again later or write your draft below.");
   throw new RequestError(503,"AI drafting is temporarily unavailable. You can write your draft below.");
