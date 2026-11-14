@@ -21,7 +21,7 @@ Open [localhost:3000](http://localhost:3000). Local development uses temporary-f
 
 Deploy as a Next.js project on Vercel. Connect a **private** Vercel Blob store for review packets and request counters. Vercel supplies the storage credentials through a linked read-write token or OIDC configuration.
 
-To enable Gemini planning, add `GEMINI_API_KEY` as a **sensitive Production** variable on the existing Vercel project and redeploy. `GEMINI_MODEL` is optional and defaults to `gemini-2.5-flash`. The guided planner runs locally in the browser and is available before Gemini setup.
+To enable Gemini planning, add `GEMINI_API_KEY` as a **sensitive Production** variable on the existing Vercel project and redeploy. `GEMINI_MODEL` is optional and defaults to `gemini-3.1-flash-lite`. The guided planner runs locally in the browser and is available before Gemini setup.
 
 ## What reviewers can do
 

@@ -19,7 +19,7 @@ const outputSchema = z.object({
 });
 
 export function GET() {
-  return reply({ available: Boolean(process.env.GEMINI_API_KEY), model: process.env.GEMINI_MODEL || "gemini-2.5-flash" });
+  return reply({ available: Boolean(process.env.GEMINI_API_KEY), model: process.env.GEMINI_MODEL || "gemini-3.1-flash-lite" });
 }
 
 export async function POST(request: Request) {
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     const key = process.env.GEMINI_API_KEY;
     if (!key) throw new RequestError(503, "Gemini is awaiting setup. You can still build a plan with the guided planner.");
     await limit(request, "gemini", 10);
-    const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+    const model = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
     const allowed = scenarios[input.scenario].allowed;
     const safeSources = input.sources.map(({ id, title, detail, sensitive }) =>
       sensitive ? { id, title: "Private record", detail: "Private. Preserve this record.", sensitive } : { id, title, detail, sensitive });
