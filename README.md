@@ -7,7 +7,7 @@ Before the Click is a rehearsal workspace for founder teams. Start with launch-w
 
 ## Run locally
 
-Use Node.js 22.18 or later.
+Use Node.js 22.18 or later in the Node.js 22 line.
 
 ```sh
 npm ci
@@ -15,7 +15,7 @@ npm test
 npm run dev
 ```
 
-Open [localhost:3000](http://localhost:3000). A local development session uses in-process review storage if a Blob store is absent. Restarting the development server clears those shared links. Private review storage is required in production.
+Open [localhost:3000](http://localhost:3000). Local development uses temporary-file review storage when a Blob store is absent. Set `BTC_DEV_REVIEW_DIR` to choose a different local directory. Private review storage is required in production.
 
 ## Production
 

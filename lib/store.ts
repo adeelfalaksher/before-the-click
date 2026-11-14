@@ -1,9 +1,47 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { BlobPreconditionFailedError, get, head, put } from "@vercel/blob";
 import { RequestError } from "./http";
 
 type Stored = { data: unknown; etag: string };
-const localRecords = new Map<string, Stored>();
+const developmentPath = (path: string) =>
+  join(process.env.BTC_DEV_REVIEW_DIR || tmpdir(), "before-the-click-" + hash(process.cwd()).slice(0, 16), path);
+
+function hasCode(error: unknown, code: string) {
+  return (error as NodeJS.ErrnoException | undefined)?.code === code;
+}
+
+async function loadLocal(path: string): Promise<Stored | null> {
+  try {
+    const data = await readFile(developmentPath(path), "utf8");
+    return { data: JSON.parse(data), etag: hash(data) };
+  } catch (error) {
+    if (hasCode(error, "ENOENT")) return null;
+    throw error;
+  }
+}
+
+async function writeLocal(path: string, payload: string, etag?: string) {
+  const file = developmentPath(path);
+  const lock = file + ".lock";
+  const next = file + "." + randomUUID();
+  await mkdir(dirname(file), { recursive: true, mode: 0o700 });
+  try { await mkdir(lock, { mode: 0o700 }); }
+  catch (error) {
+    if (hasCode(error, "EEXIST")) throw new BlobPreconditionFailedError();
+    throw error;
+  }
+  try {
+    if ((await loadLocal(path))?.etag !== etag) throw new BlobPreconditionFailedError();
+    await writeFile(next, payload, { flag: "wx", mode: 0o600 });
+    await rename(next, file);
+  } finally {
+    await rm(next, { force: true });
+    await rm(lock, { recursive: true, force: true });
+  }
+}
 
 export const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const configured = () => Boolean(process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID);
@@ -12,8 +50,8 @@ export const storeAvailable = () => configured() || process.env.NODE_ENV !== "pr
 export async function readRecord<T>(path: string, forWrite = false): Promise<{ data: T; etag: string } | null> {
   if (!configured()) {
     if (!storeAvailable()) throw new RequestError(503, "Private review storage is unavailable.");
-    const record = localRecords.get(path);
-    return record ? { data: structuredClone(record.data) as T, etag: record.etag } : null;
+    const record = await loadLocal(path);
+    return record ? { data: record.data as T, etag: record.etag } : null;
   }
   const result = await get(path, { access: "private", useCache: false });
   if (result?.statusCode !== 200) return null;
@@ -39,8 +77,7 @@ export async function writeRecord(path: string, data: unknown, ttlDays: number, 
     return;
   }
   if (!storeAvailable()) throw new RequestError(503, "Private review storage is unavailable.");
-  if (localRecords.get(path)?.etag !== etag) throw new BlobPreconditionFailedError();
-  localRecords.set(path, { data: structuredClone(data), etag: hash(payload) });
+  await writeLocal(path, payload, etag);
 }
 
 export async function limit(request: Request, purpose: string, max: number) {
