@@ -9,6 +9,8 @@ import {
  X,CalendarDays,ExternalLink,LockKeyhole,Send,AlertTriangle,Copy
 } from "lucide-react";
 import {browserSupabase} from "@/lib/supabase-browser";
+import {ResourceBrowser} from "./resource-browser";
+import {extractEmailAddress} from "@/lib/resource-picker";
 
 type View="overview"|"workflows"|"approvals"|"records"|"integrations"|"policies"|"audit"|"team"|"settings";
 type W={id:string;name:string;owner_id:string;created_at:string};
@@ -556,6 +558,22 @@ export default function Console({userId,email}:{userId:string;email:string}){
      {composer.provider!=="workspace"&&<label>Authorized account<select required value={composer.account} onChange={e=>setComposer(c=>({...c,account:e.target.value}))}>
        <option value="">Choose connected account</option>{connections.filter(c=>c.provider===composer.provider&&c.owner_id===userId).map(c=>
         <option key={c.id} value={c.account}>{c.account}</option>)}</select></label>}
+     {composer.provider!=="workspace"&&composer.account&&<ResourceBrowser workspace={workspaceId} provider={composer.provider} account={composer.account}
+       onSelect={(item,mode)=>{
+        if(composer.provider==="gmail"){
+         const address=extractEmailAddress(String(item.from||""));
+         if(!address){announce("The sender address could not be verified.",true);return;}
+         setComposer(c=>({...c,to:address,subject:"Re: "+String(item.subject||"").replace(/^Re:\s*/i,"")}));
+         announce("Sender and subject selected. Review the content before submitting.");
+        }else if(composer.provider==="drive"){
+         if(!item.id)return;
+         setComposer(c=>({...c,[mode==="destination"?"destinationId":"fileId"]:String(item.id)}));
+         announce(mode==="destination"?"Destination folder selected.":"Drive file selected.");
+        }else{
+         setComposer(c=>({...c,subject:String(item.title||""),objective:c.objective||"Create a new event referencing this calendar entry."}));
+         announce("Calendar reference selected. Confirm the new event time.");
+        }
+       }}/> }
      {composer.provider==="gmail"&&<label>Recipient email<input required type="email" value={composer.to} onChange={e=>setComposer(c=>({...c,to:e.target.value}))} placeholder="recipient@example.com"/></label>}
      {composer.provider==="calendar"&&<div className="bt-composer-grid"><label>Start date / time<input required type="datetime-local" value={composer.start} onChange={e=>setComposer(c=>({...c,start:e.target.value}))}/></label>
       <label>End date / time<input required type="datetime-local" value={composer.end} onChange={e=>setComposer(c=>({...c,end:e.target.value}))}/></label></div>}
