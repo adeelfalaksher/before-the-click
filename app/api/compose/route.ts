@@ -11,7 +11,8 @@ export const maxDuration = 25;
 const schema = z.object({
   objective: z.string().trim().min(8).max(1200),
   context: z.string().max(4000).default(""),
-  kind: z.enum(["record", "email"]).default("record")
+  kind: z.enum(["record", "email"]).default("record"),
+  provider: z.enum(["auto","openrouter"]).default("auto")
 });
 
 export async function POST(request: Request) {
@@ -20,6 +21,7 @@ export async function POST(request: Request) {
   try {
     const input = await readJson(request, schema, 24_000);
     const providers = draftAvailability();
+    if(input.provider==="openrouter")providers.gemini=false;
     if (!providers.gemini && !providers.openrouter) return reply({error:"AI drafting is not configured."}, 503);
     await limit(request, "workspace-draft", 20);
     return reply(await writeDraft({objective:input.objective,context:input.context??"",kind:input.kind??"record"}, providers));

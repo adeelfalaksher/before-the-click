@@ -72,6 +72,7 @@ export default function Console({userId,username}:{userId:string;username:string
  const [mapFlow,setMapFlow]=useState("");
  const [search,setSearch]=useState(""),[filter,setFilter]=useState("all");
  const [config,setConfig]=useState({google:false,gemini:false,openrouter:false});
+ const [draftProvider,setDraftProvider]=useState<"auto"|"openrouter">("auto");
  const [composer,setComposer]=useState({
   title:"",objective:"",provider:"workspace" as Provider,subject:"",body:"",
   to:"",account:"",start:"",end:"",fileId:"",destinationId:"",reviewers:[] as string[],sensitive:false
@@ -166,7 +167,7 @@ export default function Console({userId,username}:{userId:string;username:string
   setDrafting(true);
   try{
    const r=await fetch("/api/compose",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({objective:composer.objective,kind:composer.provider==="gmail"?"email":"record",context:""})});
+    body:JSON.stringify({objective:composer.objective,kind:composer.provider==="gmail"?"email":"record",context:"",provider:draftProvider})});
    const d=await r.json();if(!r.ok)throw new Error(apiError(d));
    setComposer(v=>({...v,subject:d.subject,body:d.body}));announce(`Draft prepared by ${d.provider}. Review and edit before submitting.`);
   }catch(e){announce(e instanceof Error?e.message:"AI drafting failed.",true);}
@@ -288,7 +289,7 @@ export default function Console({userId,username}:{userId:string;username:string
   setUploading(true);
   try{
    const {path,token}=await workspaceRequest<{path:string;token:string}>("file_upload",{workspace:workspaceId});
-   const {error}=await browserStorage().from("btc-workspace-files").uploadToSignedUrl(path,token,file,{contentType:file.type});
+   const {error}=await browserStorage().from("btc-workspace-files").uploadToSignedUrl(path,token,file,{contentType:file.type,cacheControl:"0"});
    if(error)throw error;
    await workspaceRequest("file_add",{workspace:workspaceId,path,filename:file.name.slice(0,180),mime:file.type,size:file.size});
    await refresh(workspaceId);announce("Document uploaded to private workspace storage.");
@@ -594,6 +595,9 @@ export default function Console({userId,username}:{userId:string;username:string
      <label>What should happen?<textarea required rows={3} maxLength={1200} value={composer.objective}
        onChange={e=>setComposer(c=>({...c,objective:e.target.value}))} placeholder="Describe the task and the desired outcome clearly."/></label>
      <div className="bt-composer-divider"><span className="bt-eyebrow">PROPOSED RESULT</span>
+      {config.gemini&&config.openrouter&&<select aria-label="Draft provider" value={draftProvider} onChange={e=>setDraftProvider(e.target.value as "auto"|"openrouter")}>
+       <option value="auto">Automatic</option><option value="openrouter">OpenRouter</option>
+      </select>}
       <button type="button" className="bt-ai-button" disabled={drafting||composer.sensitive||composer.objective.trim().length<8||(!config.gemini&&!config.openrouter)}
         onClick={composeWithAI}><Sparkles size={15}/>{drafting?"Drafting…":"Draft with AI"}</button></div>
      {composer.provider!=="workspace"&&<label>Authorized account<select required value={composer.account} onChange={e=>setComposer(c=>({...c,account:e.target.value}))}>

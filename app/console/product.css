@@ -364,3 +364,5 @@ body{background:var(--canvas)!important}
  .bt-topbar .brand-mark{width:27px;height:27px}
  .bt-topbar .bt-avatar{display:none}
 }
+
+.bt-composer-divider select{width:auto;min-height:34px;padding:5px 9px}
