@@ -296,14 +296,6 @@ export default function Console({userId,username}:{userId:string;username:string
   }catch(e){announce(e instanceof Error?e.message:"Could not upload the document.",true);}
   finally{setUploading(false);}
  }
- async function openAttachment(file:Attachment){
-  try{
-   const {signedPath}=await workspaceRequest<{signedPath:string}>("file_read",{id:file.id});
-   const anchor=document.createElement("a");
-   anchor.href=process.env.NEXT_PUBLIC_SUPABASE_URL+"/storage/v1"+signedPath;anchor.rel="noopener noreferrer";anchor.target="_blank";
-   document.body.append(anchor);anchor.click();anchor.remove();
-  }catch(e){announce(e instanceof Error?e.message:"Could not open document.",true);}
- }
  async function deleteAttachment(file:Attachment){
   if(!confirm("Permanently remove this uploaded document?"))return;
   setSaving(true);
@@ -521,7 +513,7 @@ export default function Console({userId,username}:{userId:string;username:string
        {attachments.length?attachments.map(a=><div className="bt-attachment-row" key={a.id}>
         <span className="bt-flow-icon"><FileText size={17}/></span>
         <span className="bt-attachment-title"><strong>{a.filename}</strong><small>{(a.byte_size/1024).toFixed(1)} KB · {pretty(a.created_at)}</small></span>
-        <button className="bt-secondary" onClick={()=>void openAttachment(a)}>Open <ExternalLink size={14}/></button>
+        <a className="bt-secondary" href={"/api/files/"+a.id}>Open <ExternalLink size={14}/></a>
         {(a.uploader_id===userId||isAdmin)&&<button className="bt-attachment-delete" disabled={saving} aria-label={"Delete "+a.filename} onClick={()=>void deleteAttachment(a)}><X size={16}/></button>}
        </div>):<div className="bt-empty in-card"><FolderClosed size={24}/><strong>No workspace files.</strong><span>Upload an authorized document to share it with your team.</span></div>}
       </section>}

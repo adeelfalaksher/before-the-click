@@ -135,7 +135,7 @@ async function data(db:Tx,action:string,p:Input,id:string){
       return {ok:true};
     }
     const result=await storage("POST","/object/sign/btc-workspace-files/"+file.object_path,{expiresIn:60});
-    return {signedPath:result.signedURL};
+    return {signedPath:result.signedURL,filename:file.filename};
   }
   throw new Failure(400,"Unknown operation.");
 }

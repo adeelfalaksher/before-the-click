@@ -11,6 +11,6 @@
 | Responsive website | The restored hero without a dark frame, field guide, and navigation passed desktop, 320 px, and 390 px Chromium checks. |
 | Authentication | The production workspace redirected a signed-out visitor to sign-in. Production accepted username sign-up and sign-in, rejected duplicates regardless of case, isolated workspaces, rotated the recovery code, and invalidated the old session after reset. |
 | Google integrations | OAuth credentials were absent in Vercel. The connectors are implemented. A live account connection, read, approved write, and result readback for each provider remain to be verified. Drive access is limited to files granted to this app. |
-| Drafting | The authenticated production drafting endpoint returned a Gemini draft. An OpenRouter key is configured and the composer supports selecting it explicitly. |
+| Drafting | The authenticated production drafting endpoint returned drafts from Gemini and the free OpenRouter router. |
 
 Test Gmail with two dedicated test mailboxes, Calendar with a private test event, and Drive with two app-authorized private folders. Independently read back each provider result and check the corresponding audit receipt. Use two unique test usernames to check enrollment, account isolation, invitation acceptance and recovery.

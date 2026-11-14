@@ -20,7 +20,6 @@ const params=z.discriminatedUnion("action",[
   z.object({action:z.literal("file_upload"),workspace:id}),
   z.object({action:z.literal("file_add"),workspace:id,path:z.string().max(150),filename:z.string().min(1).max(180),
     mime:z.enum(fileTypes),size:z.number().int().min(1).max(10485760)}),
-  z.object({action:z.literal("file_read"),id}),
   z.object({action:z.literal("file_remove"),id})
 ]);
 
