@@ -16,7 +16,7 @@ export async function POST(request:Request){
     const {token}=await getToken(actor,workspace,provider);
     const response=await fetch("https://oauth2.googleapis.com/revoke",{
      method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},
-     body:new URLSearchParams({token:token.refresh_token||token.access_token}),cache:"no-store"
+     body:new URLSearchParams({token:token.refresh_token||token.access_token}),cache:"no-store",signal:AbortSignal.timeout(8000)
     });
     revoked=response.ok;
    }catch{/* Remote revocation can fail; always remove local grant below. */}

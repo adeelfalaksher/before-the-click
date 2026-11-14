@@ -1,6 +1,6 @@
 "use client";
 
-import {useCallback,useEffect,useState} from "react";
+import {useCallback,useEffect,useRef,useState} from "react";
 import Link from "next/link";
 import {
  Activity,ArrowDownRight,ArrowRight,ArrowUpRight,Bell,Check,CheckCircle2,ChevronDown,Download,
@@ -30,6 +30,7 @@ type Audit={id:number;event:string;detail:Record<string,unknown>;created_at:stri
 type Stored={id:string;title:string;body:string;created_at:string};
 type Attachment={id:string;workspace_id:string;uploader_id:string;object_path:string;filename:string;mime_type:string;byte_size:number;created_at:string};
 type Notice={text:string;bad?:boolean};
+type ExecutionConfirmation={workflow:string;version:string;number:number;target:string;label:string};
 type Provider="workspace"|"gmail"|"calendar"|"drive";
 const menu:{id:View;label:string;icon:typeof LayoutDashboard}[]=[
  {id:"overview",label:"Overview",icon:LayoutDashboard},{id:"workflows",label:"Workflows",icon:Workflow},
@@ -68,7 +69,7 @@ export default function Console({userId,username}:{userId:string;username:string
  const [records,setRecords]=useState<Stored[]>([]),[attachments,setAttachments]=useState<Attachment[]>([]),[notifications,setNotifications]=useState<{id:number;message:string;read_at:string|null}[]>([]);
  const [initializing,setInitializing]=useState(true),[loading,setLoading]=useState(false),[saving,setSaving]=useState(false),[uploading,setUploading]=useState(false);
  const [notice,setNotice]=useState<Notice|null>(null),[createWorkspace,setCreateWorkspace]=useState(false),[workspaceName,setWorkspaceName]=useState("");
- const [createFlow,setCreateFlow]=useState(false),[selectedFlow,setSelectedFlow]=useState<string|null>(null),[confirmExecute,setConfirmExecute]=useState<string|null>(null);
+ const [createFlow,setCreateFlow]=useState(false),[selectedFlow,setSelectedFlow]=useState<string|null>(null),[confirmExecute,setConfirmExecute]=useState<ExecutionConfirmation|null>(null);
  const [mapFlow,setMapFlow]=useState("");
  const [search,setSearch]=useState(""),[filter,setFilter]=useState("all");
  const [config,setConfig]=useState({google:false,gemini:false,openrouter:false});
@@ -78,8 +79,15 @@ export default function Console({userId,username}:{userId:string;username:string
   to:"",account:"",start:"",end:"",fileId:"",destinationId:"",reviewers:[] as string[],sensitive:false
  });
  const [teamUsername,setTeamUsername]=useState(""),[teamRole,setTeamRole]=useState("reviewer"),[inviteLink,setInviteLink]=useState("");
- const [editingId,setEditingId]=useState<string|null>(null);
+ const [editing,setEditing]=useState<{id:string;version:number}|null>(null);
  const [profileName,setProfileName]=useState(""),[drafting,setDrafting]=useState(false);
+ const requestNumber=useRef(0);
+ const activeWorkspaceId=useRef("");
+ const draftRequest=useRef<AbortController|null>(null);
+ const [loadedWorkspace,setLoadedWorkspace]=useState("");
+ const [loadError,setLoadError]=useState("");
+ const workspaceReady=Boolean(workspaceId&&workspaceId===loadedWorkspace);
+ const filteredFlows=flows.filter(f=>(filter==="all"||f.status===filter)&&f.title.toLowerCase().includes(search.trim().toLowerCase()));
  const activeWorkspace=workspaces.find(w=>w.id===workspaceId);
  const ownRole=members.find(m=>m.user_id===userId)?.role??memberships.find(m=>m.workspace_id===workspaceId)?.role??"member";
  const isAdmin=ownRole==="owner"||ownRole==="admin";
@@ -104,7 +112,16 @@ export default function Console({userId,username}:{userId:string;username:string
    const pending=steps.filter(s=>s.version_id===v.id).sort((a,b)=>a.position-b.position).find(s=>!decisions.some(d=>d.version_id===v.id&&d.position===s.position));
    return flow.status==="awaiting_approval"&&pending?.reviewer_id===userId;
  };
- const mine=flows.filter(f=>isApprover(f));
+ const mine=workspaceReady?flows.filter(f=>isApprover(f)):[];
+ const selectedReceipt=selected?audit.find(event=>event.workflow_id===selected.id&&event.event.startsWith("execution.")):undefined;
+ const executionBlocked=action&&(action.document?.sensitive?"This proposal is marked sensitive. Revise it before executing.":
+  action.provider!=="workspace"&&!config.google?"This integration is unavailable.":
+  action.provider==="gmail"&&!policy?.allow_send?"Workspace policy blocks Gmail sending.":
+  action.provider==="calendar"&&!policy?.allow_calendar?"Workspace policy blocks Calendar actions.":
+  action.provider==="drive"&&!policy?.allow_drive?"Workspace policy blocks Drive actions.":
+  action.provider!=="workspace"&&!connections.some(c=>c.owner_id===userId&&c.provider===action.provider&&c.account===action.document?.account)?"Reconnect the Google account shown in this proposal.":
+  !policy?.allow_self_approval&&selectedSteps.some(step=>step.reviewer_id===selected?.created_by)?"This workspace now requires a different reviewer. Revise the proposal to assign someone else.":
+  selectedSteps.some(step=>!members.some(m=>m.user_id===step.reviewer_id&&["owner","admin","reviewer"].includes(m.role)))?"An assigned reviewer no longer has permission. Revise the proposal to assign an eligible reviewer.":null);
 
  const announce=(text:string,bad=false)=>setNotice({text,bad});
  useEffect(()=>{if(!notice)return;const timeout=setTimeout(()=>setNotice(null),6500);return()=>clearTimeout(timeout)},[notice]);
@@ -114,26 +131,35 @@ export default function Console({userId,username}:{userId:string;username:string
    const {memberships,workspaces:sorted}=await workspaceRequest<{memberships:Member[];workspaces:W[]}>("workspaces");
    setMemberships(memberships);
    setWorkspaces(sorted);
-   setWorkspaceId(current=>sorted.some(w=>w.id===current)?current:(sorted[0]?.id||""));
+   const preferred=new URLSearchParams(location.search).get("workspace");
+   const id=sorted.find(w=>w.id===activeWorkspaceId.current)?.id||sorted.find(w=>w.id===preferred)?.id||sorted[0]?.id||"";
+   activeWorkspaceId.current=id;
+   setWorkspaceId(id);
   }catch(e){announce(e instanceof Error?e.message:"Cannot load your workspaces.",true);}
   finally{setInitializing(false);}
  },[userId]);
 
  const refresh=useCallback(async(id:string)=>{
-  if(!id)return;
-  setLoading(true);
+  if(!id||id!==activeWorkspaceId.current)return;
+  const request=++requestNumber.current;
+  const isCurrent=()=>id===activeWorkspaceId.current&&request===requestNumber.current;
+  setLoading(true);setLoadError("");
   try{
    const data=await workspaceRequest<{
     flows:Flow[];members:Member[];connections:Connection[];policy:Policy|null;audit:Audit[];
     records:Stored[];attachments:Attachment[];notifications:{id:number;message:string;read_at:string|null}[];
     people:Person[];versions:Version[];actions:Proposed[];steps:Step[];decisions:Decision[];
    }>("snapshot",{workspace:id});
+   if(!isCurrent())return;
+   setLoadedWorkspace(id);
    setFlows(data.flows);setMembers(data.members);setConnections(data.connections);setPolicy(data.policy);
    setAudit(data.audit);setRecords(data.records);setAttachments(data.attachments);setNotifications(data.notifications);
-   setPeople(data.people);setProfileName(data.people.find(p=>p.id===userId)?.display_name||"");
+   setPeople(data.people);
    setVersions(data.versions);setActions(data.actions);setSteps(data.steps);setDecisions(data.decisions);
-  }catch(e){announce(e instanceof Error?e.message:"Could not refresh workspace.",true);}
-  finally{setLoading(false);}
+  }catch(e){
+   if(isCurrent()){const message=e instanceof Error?e.message:"Could not refresh workspace.";setLoadError(message);announce(message,true);}
+  }
+  finally{if(isCurrent())setLoading(false);}
  },[userId]);
 
  useEffect(()=>{void refreshWorkspaces();fetch("/api/integrations/status").then(r=>r.ok?r.json():null).then(d=>{if(d)setConfig(d)}).catch(()=>{});},[refreshWorkspaces]);
@@ -144,7 +170,10 @@ export default function Console({userId,username}:{userId:string;username:string
   if(initialView)setView(initialView.id);
   if(p.get("connected"))announce("Google account connected.");
   if(p.get("error"))announce(p.get("error")==="google-config"?"Google OAuth needs client credentials.":"Could not connect Google: "+p.get("error"),true);
-  if(p.get("connected")||p.get("error"))history.replaceState({}, "", "/console?view=integrations");
+  if(p.get("connected")||p.get("error")){
+   p.delete("connected");p.delete("error");p.set("view","integrations");
+   history.replaceState({}, "", "/console?"+p);
+  }
  },[]);
 
  async function newWorkspace(e:React.FormEvent){
@@ -152,29 +181,38 @@ export default function Console({userId,username}:{userId:string;username:string
   try{
    const data=await workspaceRequest<string>("btc_workspace",{name:workspaceName.trim()});
    setCreateWorkspace(false);setWorkspaceName("");
-   await refreshWorkspaces();setWorkspaceId(data);announce("Workspace created.");
+   await refreshWorkspaces();activeWorkspaceId.current=data;setWorkspaceId(data);announce("Workspace created.");
   }catch(e){announce(e instanceof Error?e.message:"Could not create workspace.",true);}
   finally{setSaving(false);}
  }
+ function closeComposer(){
+  draftRequest.current?.abort();draftRequest.current=null;
+  setDrafting(false);setCreateFlow(false);setEditing(null);
+ }
  function startWorkflow(){
-  setEditingId(null);
+  if(!workspaceReady)return;
+  setEditing(null);
   setComposer({title:"",objective:"",provider:"workspace",subject:"",body:"",to:"",account:"",start:"",end:"",fileId:"",destinationId:"",
    reviewers:assignedReviewers.some(m=>m.user_id===userId)?[userId]:[],sensitive:false});
   setCreateFlow(true);
  }
  async function composeWithAI(){
   if(!composer.objective.trim()){announce("Describe the action before asking AI to draft it.",true);return;}
+  const controller=new AbortController();
+  draftRequest.current=controller;
   setDrafting(true);
   try{
    const r=await fetch("/api/compose",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({objective:composer.objective,kind:composer.provider==="gmail"?"email":"record",context:"",provider:draftProvider})});
+    body:JSON.stringify({objective:composer.objective,kind:composer.provider==="gmail"?"email":"record",context:"",provider:draftProvider}),signal:controller.signal});
    const d=await r.json();if(!r.ok)throw new Error(apiError(d));
-   setComposer(v=>({...v,subject:d.subject,body:d.body}));announce(`Draft prepared by ${d.provider}. Review and edit before submitting.`);
-  }catch(e){announce(e instanceof Error?e.message:"AI drafting failed.",true);}
-  finally{setDrafting(false);}
+   if(draftRequest.current!==controller)return;
+   setComposer(v=>v===composer?({...v,subject:d.subject,body:d.body}):v);
+   if(!controller.signal.aborted)announce("AI draft received. Review your proposal before submitting.");
+  }catch(e){if(!controller.signal.aborted)announce(e instanceof Error?e.message:"AI drafting failed.",true);}
+  finally{if(draftRequest.current===controller){draftRequest.current=null;setDrafting(false);}}
  }
  async function sendProposal(e:React.FormEvent){
-  e.preventDefault();setSaving(true);
+  e.preventDefault();if(!workspaceReady||drafting)return;setSaving(true);
   try{
    const provider=composer.provider,operation=provider==="workspace"?"publish_record":provider==="gmail"?"send":provider==="calendar"?"create_event":"move_file";
    const workspace=workspaceId;
@@ -185,11 +223,11 @@ export default function Console({userId,username}:{userId:string;username:string
      fileId:provider==="drive"?composer.fileId:undefined,destinationId:provider==="drive"?composer.destinationId:undefined},
     sensitive:composer.sensitive,risk:provider==="workspace"?"low":"high"};
    const r=await fetch("/api/workflows",{method:"POST",headers:{"Content-Type":"application/json"},
-     body:JSON.stringify({workspace,...(editingId?{workflow:editingId,expectedVersion:flows.find(f=>f.id===editingId)?.current_version}:{}),title:composer.title,objective:composer.objective,provider,operation,
+     body:JSON.stringify({workspace,...(editing?{workflow:editing.id,expectedVersion:editing.version}:{}),title:composer.title,objective:composer.objective,provider,operation,
       resource:provider==="workspace"?"new-record":provider==="gmail"?composer.to:provider==="calendar"?"primary":composer.fileId,
       document:doc,reviewers:composer.reviewers})});
    const d=await r.json();if(!r.ok)throw new Error(apiError(d));
-   setCreateFlow(false);setEditingId(null);setSelectedFlow(d.id);setView("workflows");await refresh(workspace);announce("Action submitted for review.");
+   closeComposer();setSelectedFlow(d.id);setView("workflows");await refresh(workspace);announce("Action submitted for review.");
   }catch(e){announce(e instanceof Error?e.message:"Could not submit action.",true);}
   finally{setSaving(false);}
  }
@@ -202,11 +240,11 @@ export default function Console({userId,username}:{userId:string;username:string
   }catch(e){announce(e instanceof Error?e.message:"Decision was not saved.",true);}
   finally{setSaving(false);}
  }
- async function execute(flowId:string){
+ async function execute(confirmation:ExecutionConfirmation){
   setSaving(true);setConfirmExecute(null);
   try{
    const r=await fetch("/api/workflows/execute",{method:"POST",headers:{"Content-Type":"application/json"},
-     body:JSON.stringify({workflow:flowId})});
+     body:JSON.stringify({workflow:confirmation.workflow,version:confirmation.version})});
    const d=await r.json();
    await refresh(workspaceId);
    if(!r.ok)throw new Error(d.detail?.message||apiError(d));
@@ -258,6 +296,15 @@ export default function Console({userId,username}:{userId:string;username:string
   }catch(e){announce(e instanceof Error?e.message:"Could not create invitation.",true);}
   finally{setSaving(false);}
  }
+ async function manageMember(member:Member,role:string){
+  setSaving(true);
+  try{
+   await workspaceRequest("btc_member_role",{w:workspaceId,member:member.user_id,new_role:role});
+   await refresh(workspaceId);
+   announce("Workspace role updated.");
+  }catch(e){announce(e instanceof Error?e.message:"Could not update the workspace member.",true);}
+  finally{setSaving(false);}
+ }
  async function disconnect(provider:"gmail"|"calendar"|"drive"){
   if(!confirm("Disconnect this Google account? Existing approved workflows will not be able to execute through it."))return;
   setSaving(true);
@@ -280,7 +327,7 @@ export default function Console({userId,username}:{userId:string;username:string
    start:localDateInput(current.start||""),end:localDateInput(current.end||""),fileId:current.fileId||"",destinationId:current.destinationId||"",
   reviewers:steps.filter(s=>s.version_id===v.id&&assignedReviewers.some(m=>m.user_id===s.reviewer_id)).sort((x,y)=>x.position-y.position).map(s=>s.reviewer_id),
    sensitive:Boolean(a.document?.sensitive)});
-  setEditingId(flow.id);setCreateFlow(true);
+  setEditing({id:flow.id,version:v.version});setCreateFlow(true);
  }
  async function uploadAttachment(file:File){
   if(!workspaceId)return announce("Select a workspace first.",true);
@@ -325,7 +372,11 @@ export default function Console({userId,username}:{userId:string;username:string
   catch(e){announce(e instanceof Error?e.message:"Could not mark notification.",true);}
  }
  const connected=(provider:string)=>connections.find(c=>c.provider===provider&&c.owner_id===userId);
- const chooseView=(v:View)=>{setView(v);setSelectedFlow(null);setSearch("");setFilter("all");};
+ const chooseView=(v:View)=>{
+  setView(v);setSelectedFlow(null);setSearch("");setFilter("all");
+  if(v==="approvals"||v==="workflows")void refresh(workspaceId);
+  if(v==="settings")setProfileName(people.find(p=>p.id===userId)?.display_name||"");
+ };
  const sectionTitles:Record<View,[string,string]>={
   overview:["Your control center.","Every action has an owner, a decision and a record."],
   workflows:["Workflows.","A clear record of what is proposed and what actually happens."],
@@ -344,14 +395,18 @@ export default function Console({userId,username}:{userId:string;username:string
     <div className="bt-breadcrumb">Workspace <ChevronRight size={14}/><span>{menu.find(x=>x.id===view)?.label}</span></div>
     <div className="bt-top-actions">
      <button className="bt-icon-button" aria-label="Refresh data" title="Refresh workspace" disabled={loading||!workspaceId} onClick={()=>void refresh(workspaceId)}><RefreshCw size={17} className={loading?"bt-spin":""}/></button>
-     <button className="bt-icon-button" aria-label="View notifications" title="Notifications" onClick={()=>chooseView("approvals")}><Bell size={17}/>{notifications.some(n=>!n.read_at)&&<i className="bt-notification-dot"/>}</button>
+     <button className="bt-icon-button" aria-label="View notifications" title="Notifications" onClick={()=>chooseView("approvals")}><Bell size={17}/>{workspaceReady&&notifications.some(n=>!n.read_at)&&<i className="bt-notification-dot"/>}</button>
      <div className="bt-avatar">{(username[0]||"U").toUpperCase()}</div>
     </div>
    </header>
    <aside className="bt-sidebar">
     <div className="bt-workspace-control">
      <span className="bt-eyebrow">CURRENT WORKSPACE</span>
-     <select aria-label="Choose workspace" value={workspaceId} onChange={e=>{setWorkspaceId(e.target.value);setSelectedFlow(null);}} disabled={!workspaces.length}>
+     <select aria-label="Choose workspace" value={workspaceId} onChange={e=>{
+      const id=e.target.value;
+      activeWorkspaceId.current=id;
+      setWorkspaceId(id);setLoadedWorkspace("");setSelectedFlow(null);setMapFlow("");setInviteLink("");closeComposer();
+     }} disabled={!workspaces.length||saving||uploading||Boolean(confirmExecute)}>
       {!workspaces.length?<option>No workspace</option>:workspaces.map(w=><option value={w.id} key={w.id}>{w.name}</option>)}
      </select>
      <button onClick={()=>setCreateWorkspace(true)}><Plus size={14}/> New workspace</button>
@@ -374,7 +429,7 @@ export default function Console({userId,username}:{userId:string;username:string
     <main className="bt-main" id="main-content">
      <div className="bt-page-heading"><div><span className="bt-eyebrow">BEFORE THE CLICK / {view.toUpperCase()}</span>
       <h1>{sectionTitles[view][0]}</h1><p>{sectionTitles[view][1]}</p></div>
-      {workspaceId&&!["settings","team","policies","audit"].includes(view)&&
+      {workspaceReady&&["overview","workflows"].includes(view)&&
        <button className="bt-primary" onClick={startWorkflow}><Plus size={17}/> New workflow</button>}
      </div>
      {initializing?<div className="bt-empty">Loading your account…</div>:
@@ -382,8 +437,15 @@ export default function Console({userId,username}:{userId:string;username:string
        <span className="bt-eyebrow">START HERE</span><h2>A place for decisions worth checking.</h2>
        <p>Create a workspace to invite teammates, prepare actions and keep a verified record of each outcome.</p>
        <button className="bt-primary" onClick={()=>setCreateWorkspace(true)}><Plus size={17}/> Create your workspace</button>
+      </section>: !workspaceReady?<section className="bt-card bt-empty in-card" aria-live="polite">
+       {loadError?<><strong>{loadError}</strong><button className="bt-secondary" onClick={()=>void refresh(workspaceId)}>Retry</button></>:"Loading workspace…"}
       </section>: <>
       {view==="overview"&&<>
+       {!flows.length&&<section className="bt-card bt-method bt-onboarding"><h2>Publish your first workspace record</h2>
+        <p>Start with a short team update. Add the exact text, choose a reviewer, then publish the approved version to Saved records.</p>
+        <div className="bt-button-group"><button className="bt-primary" onClick={startWorkflow}>Write a proposal <ArrowRight size={15}/></button>
+        <button className="bt-secondary" onClick={()=>chooseView("team")}>Invite a teammate</button></div>
+       </section>}
        <section className="bt-stats">
         <div><span>Workflow total</span><strong>{flows.length.toString().padStart(2,"0")}</strong><small>In this workspace</small></div>
         <div><span>Awaiting your decision</span><strong>{mine.length.toString().padStart(2,"0")}</strong><small>Action required</small></div>
@@ -423,13 +485,14 @@ export default function Console({userId,username}:{userId:string;username:string
         onReview={()=>{setSelectedFlow(mapped.id);setView("workflows");}}/>
       </>:<section className="bt-card bt-empty in-card"><strong>No workflows to inspect yet.</strong><button className="bt-secondary" onClick={startWorkflow}>Create a workflow <ArrowRight size={15}/></button></section>)}
       {view==="workflows"&& !selected&&<>
-       <div className="bt-toolbar"><label className="bt-search"><Search size={17}/><input placeholder="Search workflows" value={search} onChange={e=>setSearch(e.target.value)}/></label>
+       <div className="bt-toolbar"><label className="bt-search"><Search size={17}/><input aria-label="Search workflows" placeholder="Search workflows" value={search} onChange={e=>setSearch(e.target.value)}/></label>
         <select value={filter} onChange={e=>setFilter(e.target.value)} aria-label="Filter status"><option value="all">All statuses</option>
          {Object.entries(statusNames).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select>
        </div>
        <section className="bt-card bt-list"><div className="bt-table-caption">ID <span>WORKFLOW</span><span>STATUS</span><span>LAST UPDATED</span></div>
-        {flows.filter(f=>(filter==="all"||f.status===filter)&&f.title.toLowerCase().includes(search.toLowerCase())).map(f=>
+        {filteredFlows.map(f=>
          <button key={f.id} className="bt-table-row" onClick={()=>setSelectedFlow(f.id)}><span className="bt-record-id">{idLabel(f.id)}</span><strong>{f.title}</strong><Status value={f.status}/><span className="bt-date">{pretty(f.updated_at)}</span><ChevronRight size={17}/></button>)}
+        {flows.length>0&&!filteredFlows.length&&<div className="bt-empty in-card"><strong>No matching workflows</strong><button className="bt-secondary" onClick={()=>{setSearch("");setFilter("all");}}>Clear filters</button></div>}
         {!flows.length&&<div className="bt-empty in-card"><Workflow size={24}/><strong>No workflows created.</strong><span>Your first approved action starts here.</span><button className="bt-secondary" onClick={startWorkflow}>Create workflow <ArrowRight size={15}/></button></div>}
        </section>
       </>}
@@ -446,6 +509,7 @@ export default function Console({userId,username}:{userId:string;username:string
           {action.document?.proposal?.to&&<div className="bt-meta-row"><span>To</span><strong>{action.document.proposal.to}</strong></div>}
           {action.document?.proposal?.start&&<div className="bt-meta-row"><span>Starts (local time)</span><strong>{pretty(action.document.proposal.start)}</strong></div>}
           {action.document?.proposal?.end&&<div className="bt-meta-row"><span>Ends (local time)</span><strong>{pretty(action.document.proposal.end)}</strong></div>}
+          {action.document?.proposal?.fileId&&<div className="bt-meta-row"><span>Source file ID</span><strong>{action.document.proposal.fileId}</strong></div>}
           {action.document?.proposal?.destinationId&&<div className="bt-meta-row"><span>Destination ID</span><strong>{action.document.proposal.destinationId}</strong></div>}
           <div className="bt-meta-row"><span>Risk</span><strong>{action.document?.risk||"Unclassified"}</strong></div>
          </div>
@@ -481,20 +545,32 @@ export default function Console({userId,username}:{userId:string;username:string
          </section>
         </div>
         <div className="bt-revision-action"><button className="bt-secondary" onClick={()=>{setMapFlow(selected.id);chooseView("map");}}>Inspect on map <ArrowRight size={15}/></button></div>
-        {selected.status==="approved"&&selected.created_by===userId&&
-         <div className="bt-execute-box"><div><strong>Approved. Ready for execution.</strong><p>The server will re-check permissions, policy and the exact workflow version.</p></div>
-          <button className="bt-primary" disabled={saving} onClick={()=>setConfirmExecute(selected.id)}>Execute action <ArrowRight size={17}/></button></div>}
+        {selected.status==="approved"&&selected.created_by===userId&&version&&action&&
+         <div className="bt-execute-box"><div><strong>{executionBlocked?"Execution blocked":"Approved. Ready for execution."}</strong>
+          <p>{executionBlocked||"The server checks the current policy and this approved version before executing."}</p></div>
+          {executionBlocked?<button className="bt-secondary" onClick={()=>chooseView(action.provider!=="workspace"&&!connected(action.provider)?"integrations":"policies")}>Check workspace settings</button>:
+          <button className="bt-primary" disabled={saving} onClick={()=>{
+           const proposal=action.document?.proposal;
+           const label=action.provider==="workspace"?"Publish record":action.provider==="gmail"?"Send email":action.provider==="calendar"?"Create event":"Move file";
+           const target=action.provider==="gmail"?`To ${proposal?.to} from ${action.document?.account}`:
+            action.provider==="calendar"?`Primary calendar for ${action.document?.account} · ${pretty(proposal?.start)}`:
+            action.provider==="drive"?`File ${proposal?.fileId} → folder ${proposal?.destinationId}`:activeWorkspace?.name||"This workspace";
+           setConfirmExecute({workflow:selected.id,version:version.id,number:version.version,target,label});
+          }}>Execute action <ArrowRight size={17}/></button>}</div>}
         {selected.created_by===userId&&["awaiting_approval","changes_requested","rejected","approved","failed"].includes(selected.status)&&
          <div className="bt-revision-action"><button className="bt-secondary" onClick={()=>reviseWorkflow(selected)}>Revise this proposal <ArrowRight size={15}/></button>
           {selected.status!=="failed"&&<button className="bt-secondary" disabled={saving} onClick={()=>void cancelWorkflow(selected.id)}>Cancel workflow</button>}
           <span>Revisions create a new version and invalidate all previous approvals.</span></div>}
-        {selected.status==="completed"&&<div className="bt-success">Completed. The verified outcome appears in the audit ledger.</div>}
-        {selected.status==="needs_verification"&&<div className="bt-alert">The provider outcome is uncertain. Do not repeat this operation until its result is checked.</div>}
+        {selected.status==="completed"&&<div className="bt-success">Completed and verified.
+          {typeof selectedReceipt?.detail.reference==="string"&&<p>Reference {selectedReceipt.detail.reference}</p>}
+          <div className="bt-button-group">{action?.provider==="workspace"&&<button className="bt-secondary" onClick={()=>chooseView("records")}>Saved records</button>}
+           <button className="bt-secondary" onClick={()=>chooseView("audit")}>Open audit log</button></div></div>}
+        {selected.status==="needs_verification"&&<div className="bt-alert">The provider outcome is uncertain. Check the connected Google account and the audit log before taking another action. {typeof selectedReceipt?.detail.reference==="string"&&<span>Reference {selectedReceipt.detail.reference}</span>}</div>}
        </section>
       </>}
-      {view==="approvals"&&<section className="bt-card"><div className="bt-card-header"><div><div className="bt-eyebrow">ASSIGNED TO YOU</div><h2>Approval inbox</h2></div><span className="bt-record-id">{mine.length} pending</span></div>
+      {view==="approvals"&&<section className="bt-card"><div className="bt-card-header"><div><div className="bt-eyebrow">ASSIGNED TO YOU</div><h2>Approval inbox</h2></div><button className="bt-secondary" disabled={loading} onClick={()=>void refresh(workspaceId)}><RefreshCw size={14}/> Refresh approvals</button></div>
        {mine.length?mine.map(f=><button className="bt-flow-line" key={f.id} onClick={()=>{setView("workflows");setSelectedFlow(f.id);}}><span className="bt-flow-icon"><Inbox size={18}/></span><span><strong>{f.title}</strong><small>{pretty(f.created_at)}</small></span><Status value={f.status}/><ChevronRight size={16}/></button>):
-       <div className="bt-empty in-card"><CheckCircle2 size={27}/><strong>You’re all caught up.</strong><span>Requests assigned to you appear here automatically.</span></div>}
+       <div className="bt-empty in-card"><CheckCircle2 size={27}/><strong>You’re all caught up.</strong><span>Refresh to check for newly assigned requests.</span></div>}
        {notifications.filter(n=>!n.read_at).map(n=><div className="bt-notice-row" key={n.id}>{n.message}<button onClick={()=>markNotification(n.id)}>Mark read <Check size={14}/></button></div>)}
       </section>}
       {view==="records"&&<section className="bt-card"><div className="bt-card-header"><div><div className="bt-eyebrow">PERSISTED IN SUPABASE</div><h2>Saved workspace records</h2></div><span className="bt-record-id">{records.length} records</span></div>
@@ -513,20 +589,20 @@ export default function Console({userId,username}:{userId:string;username:string
        {attachments.length?attachments.map(a=><div className="bt-attachment-row" key={a.id}>
         <span className="bt-flow-icon"><FileText size={17}/></span>
         <span className="bt-attachment-title"><strong>{a.filename}</strong><small>{(a.byte_size/1024).toFixed(1)} KB · {pretty(a.created_at)}</small></span>
-        <a className="bt-secondary" href={"/api/files/"+a.id}>Open <ExternalLink size={14}/></a>
+        <a className="bt-secondary" href={"/api/files/"+a.id}>Download <Download size={14}/></a>
         {(a.uploader_id===userId||isAdmin)&&<button className="bt-attachment-delete" disabled={saving} aria-label={"Delete "+a.filename} onClick={()=>void deleteAttachment(a)}><X size={16}/></button>}
        </div>):<div className="bt-empty in-card"><FolderClosed size={24}/><strong>No workspace files.</strong><span>Upload an authorized document to share it with your team.</span></div>}
       </section>}
       {view==="integrations"&&<section className="bt-integrations">
        {([{provider:"gmail" as const,title:"Gmail",detail:"Send approved messages from your connected account.",icon:Mail},
-         {provider:"calendar" as const,title:"Google Calendar",detail:"Create approved events and verify their IDs.",icon:CalendarDays},
+         {provider:"calendar" as const,title:"Google Calendar",detail:"Create and verify approved events on your primary calendar.",icon:CalendarDays},
          {provider:"drive" as const,title:"Google Drive",detail:"Move authorized files after approval and verify their destination.",icon:FolderClosed}]).map(item=>{
          const c=connected(item.provider),Icon=item.icon;
          return <div className="bt-connector" key={item.provider}>
           <div className="bt-connector-icon"><Icon size={25} strokeWidth={1.6}/></div>
           <div className="bt-connector-main"><h2>{item.title}</h2><p>{item.detail}</p>
            {c?<div className="bt-connected"><CheckCircle2 size={15}/> Connected: {c.account}</div>:
-            <small>{config.google?"Account authorization required.":"Google OAuth client credentials are not yet configured."}</small>}</div>
+            <small>{config.google?"Account authorization required.":"Google connection is not available in this deployment."}</small>}</div>
           {c?<button className="bt-secondary" disabled={saving} onClick={()=>void disconnect(item.provider)}>Disconnect <X size={15}/></button>:
            <a className={"bt-secondary"+(!config.google?" bt-disabled":"")} aria-disabled={!config.google} onClick={e=>{if(!config.google)e.preventDefault()}}
             href={"/api/integrations/google/start?provider="+item.provider+"&workspace="+encodeURIComponent(workspaceId)}>Connect <ArrowUpRight size={15}/></a>}
@@ -536,7 +612,7 @@ export default function Console({userId,username}:{userId:string;username:string
       </section>}
       {view==="policies"&&policy&&<section className="bt-card bt-policy-panel"><div className="bt-card-header"><div><div className="bt-eyebrow">SERVER-ENFORCED</div><h2>Workspace policies</h2></div><span className="bt-status blue">Active</span></div>
        {([{key:"allow_send",title:"Allow approved email sending",detail:"When off, even fully approved email sends are blocked."},
-          {key:"allow_calendar",title:"Allow calendar operations",detail:"Control creation and changes to calendar events."},
+          {key:"allow_calendar",title:"Allow calendar operations",detail:"Allow creation of approved calendar events."},
           {key:"allow_drive",title:"Allow Drive operations",detail:"Require an approved and authorized account for file changes."},
           {key:"allow_self_approval",title:"Allow self-approval",detail:"If off, workflow creators need another authorized reviewer."}] as const).map(rule=>
         <label key={rule.key} className="bt-policy-line"><span><strong>{rule.title}</strong><small>{rule.detail}</small></span>
@@ -554,14 +630,18 @@ export default function Console({userId,username}:{userId:string;username:string
       {view==="team"&&<>
        <section className="bt-card"><div className="bt-card-header"><div><div className="bt-eyebrow">MEMBERSHIP</div><h2>People in this workspace</h2></div><span className="bt-record-id">{members.length} people</span></div>
         {members.map(m=><div className="bt-person-line" key={m.user_id}><span className="bt-person-avatar">{displayName(m.user_id).slice(0,2).toUpperCase()}</span>
-          <span><strong>{displayName(m.user_id)}</strong><small>{m.user_id===userId?"You":"Member"}</small></span><span className="bt-role">{m.role}</span></div>)}
+          <span><strong>{displayName(m.user_id)}</strong><small>{m.user_id===userId?"You":"Member"}</small></span>{ownRole==="owner"&&m.role!=="owner"?<div className="bt-member-controls">
+           <select aria-label={`Role for ${displayName(m.user_id)}`} value={m.role} disabled={saving} onChange={e=>void manageMember(m,e.target.value)}>
+            <option value="member">Member</option><option value="reviewer">Reviewer</option><option value="admin">Admin</option>
+           </select>
+          </div>:<span className="bt-role">{m.role}</span>}</div>)}
        </section>
        {isAdmin&&<section className="bt-card bt-invite-panel"><div className="bt-eyebrow">INVITE A COLLEAGUE</div><h2>Add a reviewer</h2><p>Choose the recipient’s existing username. Only that account can accept the invitation.</p>
         <form className="bt-inline-form" onSubmit={invite}><label>Username<input required value={teamUsername} onChange={e=>setTeamUsername(e.target.value)} placeholder="colleague_username"/></label>
          <label>Role<select value={teamRole} onChange={e=>setTeamRole(e.target.value)}><option value="reviewer">Reviewer</option><option value="admin">Admin</option><option value="member">Member</option></select></label>
          <button className="bt-primary" disabled={saving}>Create invitation</button></form>
         {inviteLink&&<div className="bt-invite-link"><input readOnly aria-label="Invitation URL" value={inviteLink} onFocus={e=>e.currentTarget.select()}/>
-         <button onClick={()=>{navigator.clipboard.writeText(inviteLink);announce("Invitation copied.");}}><Copy size={16}/> Copy link</button></div>}
+         <button onClick={async()=>{try{await navigator.clipboard.writeText(inviteLink);announce("Invitation copied.");}catch{announce("Select the invitation link to copy it manually.",true);}}}><Copy size={16}/> Copy link</button></div>}
        </section>}
       </>}
       {view==="settings"&&<section className="bt-card bt-settings"><div className="bt-eyebrow">IDENTITY</div><h2>Your profile</h2><p>Username {username}</p>
@@ -577,8 +657,9 @@ export default function Console({userId,username}:{userId:string;username:string
    {createWorkspace&&<Modal onClose={()=>setCreateWorkspace(false)} title="New workspace" eyebrow="START SOMETHING ACCOUNTABLE"><p>Each workspace has its own members, approvals and audit history.</p>
     <form className="bt-form" onSubmit={newWorkspace}><label>Workspace name<input required minLength={2} maxLength={100} autoFocus value={workspaceName} onChange={e=>setWorkspaceName(e.target.value)} placeholder="Your organization or team"/></label>
     <div className="bt-modal-actions"><button type="button" className="bt-secondary" onClick={()=>setCreateWorkspace(false)}>Cancel</button><button className="bt-primary" disabled={saving}>Create workspace <ArrowRight size={16}/></button></div></form></Modal>}
-   {createFlow&&<Modal onClose={()=>{setCreateFlow(false);setEditingId(null)}} title={editingId?"Revise this action":"Propose an action"} eyebrow={editingId?"NEW VERSION":"NEW WORKFLOW"} wide>
+   {createFlow&&<Modal onClose={closeComposer} title={editing?"Revise this action":"Propose an action"} eyebrow={editing?"NEW VERSION":"NEW WORKFLOW"} wide>
     <form className="bt-form bt-composer" onSubmit={sendProposal}>
+     <fieldset className="bt-composer-fields" disabled={drafting||saving}>
      <div className="bt-composer-grid"><label>Workflow title<input required maxLength={100} minLength={3} value={composer.title} onChange={e=>setComposer(c=>({...c,title:e.target.value}))} placeholder="Prepare weekly status update"/></label>
       <label>Action type<select value={composer.provider} onChange={e=>setComposer(c=>({...c,provider:e.target.value as Provider,account:""}))}>
        <option value="workspace">Save a workspace record</option><option value="gmail" disabled={!connected("gmail")}>Send approved Gmail message</option>
@@ -620,28 +701,45 @@ export default function Console({userId,username}:{userId:string;username:string
        <input required maxLength={composer.provider==="workspace"?200:250} value={composer.subject} onChange={e=>setComposer(c=>({...c,subject:e.target.value}))} placeholder="Exact proposed title"/></label>
      <label>{composer.provider==="gmail"?"Email body":"Full proposed content"}
       <textarea required rows={6} maxLength={composer.provider==="workspace"?10000:12000} value={composer.body} onChange={e=>setComposer(c=>({...c,body:e.target.value}))} placeholder="The exact content reviewers will approve."/></label>
-     <div className="bt-approval-picker"><div className="bt-eyebrow">REVIEWERS · IN ORDER</div><p>Choose the people who must approve this exact version.</p>
+     <div className="bt-approval-picker"><div className="bt-eyebrow">REVIEWERS · IN ORDER</div><p>Choose the people who must approve this exact version, in the order they should review it.</p>
+      {policy?.allow_self_approval&&<p>You can review your own proposal under this workspace’s current policy.</p>}
       {assignedReviewers.map(m=><label key={m.user_id} className="bt-check-row"><input type="checkbox" checked={composer.reviewers.includes(m.user_id)}
        onChange={e=>setComposer(c=>({...c,reviewers:e.target.checked?[...c.reviewers,m.user_id]:c.reviewers.filter(id=>id!==m.user_id)}))}/><span>{composer.reviewers.includes(m.user_id)&&`${composer.reviewers.indexOf(m.user_id)+1}. `}{displayName(m.user_id)} <small>{m.role}</small></span></label>)}
       {!assignedReviewers.length&&<div className="bt-alert">Add an authorized reviewer in Team before submitting.</div>}
      </div>
-     <label className="bt-check-row"><input type="checkbox" checked={composer.sensitive} onChange={e=>setComposer(c=>({...c,sensitive:e.target.checked}))}/> Contains sensitive information. Prevent execution under default policy.</label>
-     <div className="bt-modal-actions"><button type="button" className="bt-secondary" onClick={()=>setCreateFlow(false)}>Cancel</button>
-      <button className="bt-primary" disabled={saving||!composer.reviewers.length}>{editingId?"Submit revised version":"Submit for approval"} <ArrowRight size={16}/></button></div>
+     <label className="bt-check-row"><input type="checkbox" checked={composer.sensitive} onChange={e=>setComposer(c=>({...c,sensitive:e.target.checked}))}/> Contains sensitive information. Block AI drafting and execution.</label>
+     </fieldset>
+     <div className="bt-modal-actions"><button type="button" className="bt-secondary" onClick={closeComposer}>Cancel</button>
+      <button className="bt-primary" disabled={saving||drafting||!composer.reviewers.length}>{editing?"Submit revised version":"Submit for approval"} <ArrowRight size={16}/></button></div>
     </form></Modal>}
-   {confirmExecute&&<Modal onClose={()=>setConfirmExecute(null)} title="Execute approved action?" eyebrow="FINAL CONFIRMATION">
-    <p>The server will enforce the latest policies and approvals. External actions can affect real accounts and may not be reversible.</p>
+   {confirmExecute&&<Modal onClose={()=>setConfirmExecute(null)} title={confirmExecute.label+"?"} eyebrow={`APPROVED VERSION ${confirmExecute.number}`}>
+    <p>{confirmExecute.target}</p>
+    <p>Execution applies to this exact approved version.</p>
     <div className="bt-modal-actions"><button className="bt-secondary" onClick={()=>setConfirmExecute(null)}>Go back</button>
-     <button className="bt-primary" disabled={saving} onClick={()=>execute(confirmExecute)}>Execute now <ArrowRight size={16}/></button></div>
+     <button className="bt-primary" disabled={saving} onClick={()=>execute(confirmExecute)}>{confirmExecute.label} <ArrowRight size={16}/></button></div>
    </Modal>}
  </div>;
 }
 
 function Modal({children,onClose,title,eyebrow,wide=false}:{children:React.ReactNode;onClose:()=>void;title:string;eyebrow:string;wide?:boolean}){
- useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(e.key==="Escape")onClose()};window.addEventListener("keydown",onKey);
-  return()=>window.removeEventListener("keydown",onKey)},[onClose]);
+ const dialog=useRef<HTMLElement>(null);
+ useEffect(()=>{
+  const previous=document.activeElement;
+  const panel=dialog.current;
+  panel?.querySelector<HTMLElement>("[autofocus], input, button")?.focus();
+  return()=>{if(previous instanceof HTMLElement&&previous.isConnected)previous.focus();};
+ },[]);
  return <div className="bt-modal-backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)onClose();}}>
-  <section className={"bt-modal"+(wide?" wide":"")} role="dialog" aria-modal="true" aria-label={title}>
+  <section ref={dialog} className={"bt-modal"+(wide?" wide":"")} role="dialog" aria-modal="true" aria-label={title}
+   onKeyDown={event=>{
+    if(event.key==="Escape"){event.stopPropagation();onClose();}
+    if(event.key!=="Tab")return;
+    const items=Array.from(event.currentTarget.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href]"))
+     .filter(item=>!item.matches(":disabled,[tabindex='-1']")&&item.getClientRects().length>0);
+    const first=items[0],last=items.at(-1);
+    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}
+    if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
+   }}>
    <button className="bt-modal-close" aria-label="Close dialog" onClick={onClose}><X size={20}/></button>
    <span className="bt-eyebrow">{eyebrow}</span><h2>{title}</h2>{children}
   </section></div>;
@@ -654,7 +752,7 @@ function ReviewButtons({busy,onDecide}:{busy:boolean;onDecide:(choice:"approved"
    <button className="bt-secondary" disabled={busy} onClick={()=>setChoice("changes_requested")}>Request changes</button>
    <button className="bt-secondary" disabled={busy} onClick={()=>setChoice("rejected")}>Reject</button>
    <button className="bt-primary" disabled={busy} onClick={()=>onDecide("approved","")}>Approve exact version <Check size={16}/></button>
-  </div>:<div className="bt-reason"><textarea autoFocus required maxLength={500} placeholder="Explain what must change or why this cannot proceed." value={note} onChange={e=>setNote(e.target.value)}/>
+  </div>:<div className="bt-reason"><textarea aria-label="Decision reason" autoFocus required maxLength={500} placeholder="Explain what must change or why this cannot proceed." value={note} onChange={e=>setNote(e.target.value)}/>
    <button className="bt-secondary" onClick={()=>setChoice(null)}>Cancel</button><button className="bt-primary" disabled={!note.trim()||busy} onClick={()=>{onDecide(choice,note);setChoice(null);}}>Submit decision</button></div>}
  </div>;
 }

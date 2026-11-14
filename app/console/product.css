@@ -366,3 +366,11 @@ body{background:var(--canvas)!important}
 }
 
 .bt-composer-divider select{width:auto;min-height:34px;padding:5px 9px}
+
+.bt-onboarding{margin-bottom:20px}
+.bt-onboarding .bt-button-group{margin-top:14px}
+
+.bt-composer-fields{border:0;padding:0;margin:0;display:flex;flex-direction:column;gap:16px;min-width:0}
+
+.bt-member-controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.bt-member-controls select{border:1px solid var(--line);border-radius:8px;background:var(--white);padding:7px}

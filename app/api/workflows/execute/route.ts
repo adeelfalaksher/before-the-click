@@ -1,21 +1,24 @@
 import {requireSameOrigin} from "@/lib/auth-request";
 import { z } from "zod";
 import { authenticated, jsonError, signedOperation } from "@/lib/btc-security";
-import { executeGoogleAction, getToken, googleConfigured } from "@/lib/google";
+import { executeGoogleAction, getToken, googleConfigured, GoogleVerificationError } from "@/lib/google";
 
 export const runtime="nodejs";
-const inputSchema=z.object({workflow:z.string().uuid()});
+export const maxDuration=60;
+const inputSchema=z.object({workflow:z.string().uuid(),version:z.string().uuid()});
 export async function POST(request:Request) {
   try { requireSameOrigin(request); } catch { return Response.json({error:"This request must come from Before the Click."},{status:403}); }
   const actor=await authenticated();
   if(!actor) return Response.json({error:"Sign in first."},{status:401});
   try {
-    const {workflow}=inputSchema.parse(await request.json());
+    const parsed=inputSchema.safeParse(await request.json());
+    if(!parsed.success) return Response.json({error:"Reopen the workflow and confirm its current version."},{status:400});
+    const {workflow,version}=parsed.data;
     const w=await actor.data<{id:string;workspace_id:string;created_by:string;current_version:number;status:string}|null>("workflow",{id:workflow});
     if(!w||w.created_by!==actor.user.id) return Response.json({error:"Workflow not found."},{status:404});
     if(w.status!=="approved"&&w.status!=="completed") return Response.json({error:"Complete the required approvals first."},{status:409});
     const v=await actor.data<{id:string}|null>("version",{workflow,version:w.current_version});
-    if(!v) return Response.json({error:"The workflow version was not found."},{status:409});
+    if(!v||v.id!==version) return Response.json({error:"The workflow changed. Review its latest version before executing."},{status:409});
     const action=await actor.data<{provider:string;operation:string;resource_id:string;document:unknown}|null>("proposal",{version:v.id});
     if(!action) return Response.json({error:"The proposed action was not found."},{status:409});
 
@@ -43,7 +46,8 @@ export async function POST(request:Request) {
       const result=await executeGoogleAction(actor, w.workspace_id, action);
       status="completed";reference=result.reference;detail=result.detail;
     } catch(e) {
-      detail={message:e instanceof Error?e.message:"The provider operation could not be verified."};
+      if(e instanceof GoogleVerificationError)reference=e.reference;
+      detail={...(e instanceof GoogleVerificationError?e.detail:{}),message:e instanceof Error?e.message:"The provider operation could not be verified."};
       status="needs_verification";
     }
     const signed=signedOperation(actor.user.id,"execution",

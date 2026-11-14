@@ -101,6 +101,7 @@ async function data(db:Tx,action:string,p:Input,id:string){
   if(action==="btc_decide")return (await db`select public.btc_decide(${p.f},${p.v},${p.d},${p.note}) as value`)[0].value;
   if(action==="btc_policies")return (await db`select public.btc_policies(${p.w},${p.sending},${p.calendar},${p.drive},${p.self_approval}) as value`)[0].value;
   if(action==="btc_invite")return (await db`select public.btc_invite(${p.w},${p.address},${p.member_role},${p.digest}) as value`)[0].value;
+  if(action==="btc_member_role")return (await db`select public.btc_member_role(${p.w},${p.member},${p.new_role}) as value`)[0].value;
   if(action==="btc_notification")return (await db`select public.btc_notification(${p.n}) as value`)[0].value;
   if(action==="btc_export_audit")return (await db`select public.btc_export_audit(${p.w}) as value`)[0].value;
   if(action==="btc_connection")return (await db`select public.btc_connection(${p.payload},${p.signature}) as value`)[0].value;

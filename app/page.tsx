@@ -4,9 +4,9 @@ import { ArrowDownRight, ArrowRight, ArrowUpRight, Check, ChevronRight, Clock3, 
 import { Brand, SiteFooter } from "./ui";
 
 const steps = [
-  { name: "Describe the task", detail: "Describe the goal and write the exact change you want to make.", icon: Inbox },
-  { name: "Review in order", detail: "Decide what should go ahead and what needs work.", icon: ShieldCheck },
-  { name: "See what changes", detail: "Execute the approved action and check the result.", icon: Waypoints }
+  { name: "Propose a change", detail: "Write the action yourself or use AI to draft the content.", icon: Inbox },
+  { name: "Review in order", detail: "Ask teammates to approve the exact proposal or request changes.", icon: ShieldCheck },
+  { name: "Execute and verify", detail: "Run the approved action and check the receipt in the audit log.", icon: Waypoints }
 ];
 const previewReviewers = [
   { initials: "MP", name: "Maya Patel", role: "Product", status: "Approved", tone: "green" },
@@ -36,7 +36,7 @@ export default function Home() {
           </div>
           <div className="hero-content">
             <h1>Before an agent acts,<br /><em>see what happens.</em></h1>
-            <p>Review what an AI agent plans to do, get the right people to sign off, and verify the result.</p>
+            <p>Draft an action with AI, get the right people to sign off, and verify what changed after you run it.</p>
             <div className="hero-actions">
               <Link className="button dark" href="/login?mode=signup">Create an account <ArrowRight size={18} /></Link>
               <a className="text-link" href="#workflow">Explore the workflow <ArrowDownRight size={16} /></a>
@@ -49,7 +49,7 @@ export default function Home() {
 
       <section id="workflow" className="home-workflow page-width" aria-labelledby="workflow-title">
         <div className="section-kicker">THE WORKFLOW</div>
-        <h2 id="workflow-title">A clear path from request to decision.</h2>
+        <h2 id="workflow-title">A clear path from request to result.</h2>
         <div className="home-steps">
           {steps.map(({ name, detail, icon: Icon }, index) => <div key={name}>
             <div className="step-top"><Icon size={21} strokeWidth={1.65} /><span>0{index + 1}</span></div>
@@ -96,8 +96,8 @@ export default function Home() {
 
       <section className="home-end">
         <div className="page-width">
-          <div><div className="section-kicker">GET STARTED</div><h2>Start with a familiar task.</h2><p>Start with a workspace record and track every decision through publication.</p></div>
-          <Link className="button dark" href="/console?view=workflows">Open workflows <ArrowRight size={17} /></Link>
+          <div><div className="section-kicker">GET STARTED</div><h2>Start with a familiar task.</h2><p>Publish a team update as a workspace record and follow it through approval.</p></div>
+          <Link className="button dark" href="/guide">Publish your first record <ArrowRight size={17} /></Link>
         </div>
       </section>
     </main>
