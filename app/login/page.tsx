@@ -3,6 +3,7 @@ import {useEffect,useState} from "react";
 import Link from "next/link";
 import {ArrowRight,CheckCircle2,LockKeyhole} from "lucide-react";
 import {browserSupabase} from "@/lib/supabase-browser";
+import {authDestination} from "@/lib/auth-destination";
 import "@/app/console/product.css";
 type Mode="login"|"signup"|"forgot";
 export default function Login(){
@@ -13,15 +14,15 @@ export default function Login(){
  useEffect(()=>{
   const q=new URLSearchParams(window.location.search);
   if(q.get("mode")==="signup")setMode("signup");
-  const destination=q.get("next");
-  if(destination?.startsWith("/")&&!destination.startsWith("//"))setNext(destination);
+  setNext(authDestination(q.get("next")));
+  if(q.get("error")==="verification")setError("This email link is invalid or expired. Open the latest link in the browser where you requested it.");
  },[]);
  async function submit(event:React.FormEvent){
   event.preventDefault();setBusy(true);setError("");setSuccess("");
   try {
    const supabase=browserSupabase();
    if(mode==="forgot"){
-    const {error:e}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin+"/auth/reset"});
+    const {error:e}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin+"/auth/callback?next=/auth/reset"});
     if(e)throw e;setSuccess("If that address is registered, check your email for a recovery link.");
    }else if(mode==="signup"){
     const {error:e,data}=await supabase.auth.signUp({email,password,

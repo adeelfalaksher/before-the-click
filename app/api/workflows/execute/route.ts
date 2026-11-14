@@ -12,7 +12,7 @@ export async function POST(request:Request) {
     const {data:w,error:we}=await actor.supabase.from("workflows")
       .select("id,workspace_id,created_by,current_version,status").eq("id",workflow).single();
     if(we||!w||w.created_by!==actor.user.id) return Response.json({error:"Workflow not found."},{status:404});
-    if(w.status!=="approved") return Response.json({error:"Complete the required approvals first."},{status:409});
+    if(w.status!=="approved"&&w.status!=="completed") return Response.json({error:"Complete the required approvals first."},{status:409});
     const {data:v,error:ve}=await actor.supabase.from("workflow_versions")
       .select("id,version").eq("workflow_id",workflow).eq("version",w.current_version).single();
     if(ve||!v) return Response.json({error:"The workflow version was not found."},{status:409});
@@ -30,6 +30,7 @@ export async function POST(request:Request) {
       return Response.json({status:"completed",reference:id,record:verified});
     }
 
+    if(w.status==="completed") return Response.json({error:"This action has already been executed."},{status:409});
     if(!["gmail","calendar","drive"].includes(action.provider)) {
       return Response.json({error:"No executable connector exists for this action."},{status:409});
     }

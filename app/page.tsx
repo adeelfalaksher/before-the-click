@@ -1,5 +1,6 @@
 import Link from "next/link";
-import {ArrowRight,ArrowUpRight,CheckCircle2,Clock3,FileText,GitCompareArrows,LockKeyhole,Mail,ShieldCheck,Waypoints} from "lucide-react";
+import {ArrowRight,ArrowUpRight,FileText,GitCompareArrows,ShieldCheck} from "lucide-react";
+import {ActionPreview} from "./action-preview";
 import "./console/product.css";
 const stages=[
  {n:"01",title:"Prepare",body:"Create a precise, inspectable proposal. AI can help draft it, but cannot execute it."},
@@ -22,15 +23,7 @@ export default function Home(){
     <div className="bt-hero-ctas"><Link className="bt-primary" href="/login?mode=signup">Create a workspace <ArrowRight size={17}/></Link><a className="bt-small-link" href="#how-it-works">Explore the process <ArrowRight size={15}/></a></div>
     <div className="bt-hero-proof"><span><strong>01 / HUMAN REVIEW</strong>No invisible decisions</span><span><strong>02 / POLICY GATES</strong>Permissions before execution</span><span><strong>03 / AUDIT TRAIL</strong>Every outcome accounted for</span></div>
    </div>
-   <div className="bt-hero-diagram" aria-label="Illustration of a proposed action awaiting approval">
-    <div className="bt-diagram-top"><span><i/> ACTION INSPECTION</span><span>STEP 02 / 05</span></div>
-    <div className="bt-diagram-main">
-     <div className="bt-diagram-action"><span><Mail size={19}/></span><div><strong>Outgoing email</strong><small>Review exact content before sending</small></div><span className="bt-status blue">Review required</span></div>
-     <div className="bt-diagram-message"><span>PROPOSED ACTION / MESSAGE</span><strong>Send a project update</strong>
-      <p>See the recipient, subject, message and intended result. Nothing executes while reviewers are deciding.</p></div>
-     <div className="bt-diagram-bottom"><span><LockKeyhole size={15}/> External actions require approval</span><Link href="/guide" className="bt-small-link">How approvals work <ArrowRight size={14}/></Link></div>
-    </div>
-   </div>
+   <ActionPreview />
   </section>
   <section id="control" className="bt-features"><span className="bt-eyebrow">THE SAFETY NET IS THE PRODUCT</span><h2>Control isn’t a checklist.<br/>It’s the architecture.</h2>
    <div className="bt-feature-grid">

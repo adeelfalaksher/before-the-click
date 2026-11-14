@@ -30,15 +30,20 @@ Approved workspace-record actions are stored in Supabase and read back before re
 
 ## Environment
 
-Copy .env.example to .env.local and configure the settings; never commit secrets. NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY are public. BTC_SERVER_SECRET is server-only and must match the secret configured in the dedicated Supabase database. GEMINI_API_KEY is optional and server-only. GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI are required for Google integrations.
+Copy `.env.example` to `.env.local` and configure the settings. Keep secrets out of Git. `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` are public. `BTC_SERVER_SECRET` is server-only and must match the singleton in `btc_private.server_configuration`. Generate and provision that value privately for a new database.
+
+- Drafting uses `GEMINI_API_KEY` on the server. `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` enable a fallback. Use a `:free` model that supports structured output and a provider that denies data collection.
+- Google OAuth requires `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` in Vercel. Register `https://before-the-click.vercel.app/api/integrations/google/callback` with the OAuth client. Enable the Gmail, Calendar and Drive APIs in its Google Cloud project.
+- Public sign-up and recovery require custom SMTP in Supabase Auth. Keep email confirmation on and allow the `/auth/callback` URL and the callback query variants for sign-up, invitations and recovery. Verify email delivery with an address outside the Supabase project team.
+- Redeploy Vercel after adding production environment variables.
 
 ## Run and test
 
 Requires Node.js 22.x. Run npm ci, npm run dev, npm test, npm run typecheck, and npm run build.
 
-The Supabase project already has existing governance and workspace_records migrations. The private-attachments migration is checked into supabase/migrations. Preserve those existing database objects during deploys.
+The SQL under `supabase/migrations` matches the applied migration versions in the dedicated Supabase project. It includes governance, published records, private attachments, and administrator file removal. Apply in order for a new deployment. The migration files do not contain the signing secret.
 
-The eight existing regression tests cover the original deterministic workflow logic. A successful build does not establish that external Google actions or email verification have been tested. Each Google integration must be verified with authorized test accounts before being advertised as available.
+See [Release verification](docs/release-verification.md) for the checks run against the production database and the external setup still required.
 
 ## Security
 

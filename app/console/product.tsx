@@ -42,6 +42,12 @@ const statusNames:Record<string,string>={
 const pretty=(date:string)=>new Date(date).toLocaleString(undefined,{day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
 const idLabel=(id:string)=>id.slice(0,8).toUpperCase();
 const short=(s:string,max=120)=>s.length>max?s.slice(0,max)+"…":s;
+function localDateInput(value:string){
+ const date=new Date(value);
+ if(!value||!Number.isFinite(date.getTime()))return "";
+ if(!/(?:Z|[+-]\d\d:\d\d)$/.test(value))return value;
+ return new Date(date.getTime()-date.getTimezoneOffset()*60_000).toISOString().slice(0,16);
+}
 function apiError(value:any){return typeof value?.error==="string"?value.error:"The operation could not be completed.";}
 function Status({value}:{value:string}){
  const tone=value==="completed"?"good":value==="approved"?"blue":value==="failed"||value==="rejected"?"bad":value==="needs_verification"?"warn":"neutral";
@@ -62,7 +68,7 @@ export default function Console({userId,email}:{userId:string;email:string}){
  const [notice,setNotice]=useState<Notice|null>(null),[createWorkspace,setCreateWorkspace]=useState(false),[workspaceName,setWorkspaceName]=useState("");
  const [createFlow,setCreateFlow]=useState(false),[selectedFlow,setSelectedFlow]=useState<string|null>(null),[confirmExecute,setConfirmExecute]=useState<string|null>(null);
  const [search,setSearch]=useState(""),[filter,setFilter]=useState("all");
- const [config,setConfig]=useState({google:false,gemini:false});
+ const [config,setConfig]=useState({google:false,gemini:false,openrouter:false});
  const [composer,setComposer]=useState({
   title:"",objective:"",provider:"workspace" as Provider,subject:"",body:"",
   to:"",account:"",start:"",end:"",fileId:"",destinationId:"",reviewers:[] as string[],sensitive:false
@@ -81,7 +87,7 @@ export default function Console({userId,email}:{userId:string;email:string}){
  const nextReviewer=selectedSteps.find(s=>!selectedDecisions.some(d=>d.position===s.position));
  const currentMembership=memberships.find(m=>m.workspace_id===workspaceId);
  const displayName=(id:string)=>people.find(p=>p.id===id)?.display_name|| (id===userId?email:idLabel(id));
- const assignedReviewers=members.filter(m=>["owner","admin","reviewer"].includes(m.role));
+ const assignedReviewers=members.filter(m=>["owner","admin","reviewer"].includes(m.role)&&(m.user_id!==userId||policy?.allow_self_approval===true));
  const isApprover=(flow:Flow)=>{
    const v=versions.find(v=>v.workflow_id===flow.id&&v.version===flow.current_version);
    if(!v)return false;
@@ -183,7 +189,7 @@ export default function Console({userId,email}:{userId:string;email:string}){
    const r=await fetch("/api/compose",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({objective:composer.objective,kind:composer.provider==="gmail"?"email":"record",context:""})});
    const d=await r.json();if(!r.ok)throw new Error(apiError(d));
-   setComposer(v=>({...v,subject:d.subject,body:d.body}));announce("Draft prepared. Review and edit before submitting.");
+   setComposer(v=>({...v,subject:d.subject,body:d.body}));announce(`Draft prepared by ${d.provider}. Review and edit before submitting.`);
   }catch(e){announce(e instanceof Error?e.message:"AI drafting failed.",true);}
   finally{setDrafting(false);}
  }
@@ -195,7 +201,7 @@ export default function Console({userId,email}:{userId:string;email:string}){
    if(!workspace)throw new Error("Select a workspace.");
    const doc={account:provider==="workspace"?undefined:composer.account,
     proposal:{subject:composer.subject,body:composer.body,to:provider==="gmail"?composer.to:undefined,
-     start:provider==="calendar"?composer.start:undefined,end:provider==="calendar"?composer.end:undefined,
+     start:provider==="calendar"?new Date(composer.start).toISOString():undefined,end:provider==="calendar"?new Date(composer.end).toISOString():undefined,
      fileId:provider==="drive"?composer.fileId:undefined,destinationId:provider==="drive"?composer.destinationId:undefined},
     sensitive:composer.sensitive,risk:provider==="workspace"?"low":"high"};
    const r=await fetch("/api/workflows",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -267,8 +273,8 @@ export default function Console({userId,email}:{userId:string;email:string}){
   const current=a.document?.proposal||{};
   setComposer({title:flow.title,objective:v.objective,provider:a.provider as Provider,
    subject:current.subject||"",body:current.body||"",to:current.to||"",account:a.document?.account||"",
-   start:current.start||"",end:current.end||"",fileId:current.fileId||"",destinationId:current.destinationId||"",
-   reviewers:steps.filter(s=>s.version_id===v.id).sort((x,y)=>x.position-y.position).map(s=>s.reviewer_id),
+   start:localDateInput(current.start||""),end:localDateInput(current.end||""),fileId:current.fileId||"",destinationId:current.destinationId||"",
+  reviewers:steps.filter(s=>s.version_id===v.id&&assignedReviewers.some(m=>m.user_id===s.reviewer_id)).sort((x,y)=>x.position-y.position).map(s=>s.reviewer_id),
    sensitive:Boolean(a.document?.sensitive)});
   setEditingId(flow.id);setCreateFlow(true);
  }
@@ -433,8 +439,8 @@ export default function Console({userId,email}:{userId:string;email:string}){
          <div><span className="bt-eyebrow">PROPOSED EXTERNAL EFFECT</span><h3>{action.operation.replaceAll("_"," ")}</h3>
           <div className="bt-meta-row"><span>Target</span><strong>{action.provider==="workspace"?"Workspace record":action.provider+" · "+(action.document?.account||"Connected account")}</strong></div>
           {action.document?.proposal?.to&&<div className="bt-meta-row"><span>To</span><strong>{action.document.proposal.to}</strong></div>}
-          {action.document?.proposal?.start&&<div className="bt-meta-row"><span>Starts</span><strong>{action.document.proposal.start}</strong></div>}
-          {action.document?.proposal?.end&&<div className="bt-meta-row"><span>Ends</span><strong>{action.document.proposal.end}</strong></div>}
+          {action.document?.proposal?.start&&<div className="bt-meta-row"><span>Starts (local time)</span><strong>{pretty(action.document.proposal.start)}</strong></div>}
+          {action.document?.proposal?.end&&<div className="bt-meta-row"><span>Ends (local time)</span><strong>{pretty(action.document.proposal.end)}</strong></div>}
           {action.document?.proposal?.destinationId&&<div className="bt-meta-row"><span>Destination ID</span><strong>{action.document.proposal.destinationId}</strong></div>}
           <div className="bt-meta-row"><span>Risk</span><strong>{action.document?.risk||"Unclassified"}</strong></div>
          </div>
@@ -553,8 +559,8 @@ export default function Console({userId,email}:{userId:string;email:string}){
      <label>What should happen?<textarea required rows={3} maxLength={1200} value={composer.objective}
        onChange={e=>setComposer(c=>({...c,objective:e.target.value}))} placeholder="Describe the task and the desired outcome clearly."/></label>
      <div className="bt-composer-divider"><span className="bt-eyebrow">PROPOSED RESULT</span>
-      <button type="button" className="bt-ai-button" disabled={drafting||!composer.objective.trim()||!config.gemini}
-        onClick={composeWithAI}><Sparkles size={15}/>{drafting?"Drafting…":"Draft with Gemini"}</button></div>
+      <button type="button" className="bt-ai-button" disabled={drafting||composer.sensitive||composer.objective.trim().length<8||(!config.gemini&&!config.openrouter)}
+        onClick={composeWithAI}><Sparkles size={15}/>{drafting?"Drafting…":"Draft with AI"}</button></div>
      {composer.provider!=="workspace"&&<label>Authorized account<select required value={composer.account} onChange={e=>setComposer(c=>({...c,account:e.target.value}))}>
        <option value="">Choose connected account</option>{connections.filter(c=>c.provider===composer.provider&&c.owner_id===userId).map(c=>
         <option key={c.id} value={c.account}>{c.account}</option>)}</select></label>}
@@ -580,12 +586,12 @@ export default function Console({userId,email}:{userId:string;email:string}){
      {composer.provider==="drive"&&<div className="bt-composer-grid"><label>File ID<input required value={composer.fileId} onChange={e=>setComposer(c=>({...c,fileId:e.target.value}))}/></label>
       <label>Destination folder ID<input required value={composer.destinationId} onChange={e=>setComposer(c=>({...c,destinationId:e.target.value}))}/></label></div>}
      <label>{composer.provider==="gmail"?"Email subject":composer.provider==="calendar"?"Event title":composer.provider==="drive"?"File change summary":"Record title"}
-       <input required maxLength={250} value={composer.subject} onChange={e=>setComposer(c=>({...c,subject:e.target.value}))} placeholder="Exact proposed title"/></label>
+       <input required maxLength={composer.provider==="workspace"?200:250} value={composer.subject} onChange={e=>setComposer(c=>({...c,subject:e.target.value}))} placeholder="Exact proposed title"/></label>
      <label>{composer.provider==="gmail"?"Email body":"Full proposed content"}
-      <textarea required rows={6} maxLength={12000} value={composer.body} onChange={e=>setComposer(c=>({...c,body:e.target.value}))} placeholder="The exact content reviewers will approve."/></label>
+      <textarea required rows={6} maxLength={composer.provider==="workspace"?10000:12000} value={composer.body} onChange={e=>setComposer(c=>({...c,body:e.target.value}))} placeholder="The exact content reviewers will approve."/></label>
      <div className="bt-approval-picker"><div className="bt-eyebrow">REVIEWERS · IN ORDER</div><p>Choose the people who must approve this exact version.</p>
       {assignedReviewers.map(m=><label key={m.user_id} className="bt-check-row"><input type="checkbox" checked={composer.reviewers.includes(m.user_id)}
-       onChange={e=>setComposer(c=>({...c,reviewers:e.target.checked?[...c.reviewers,m.user_id]:c.reviewers.filter(id=>id!==m.user_id)}))}/><span>{displayName(m.user_id)} <small>{m.role}</small></span></label>)}
+       onChange={e=>setComposer(c=>({...c,reviewers:e.target.checked?[...c.reviewers,m.user_id]:c.reviewers.filter(id=>id!==m.user_id)}))}/><span>{composer.reviewers.includes(m.user_id)&&`${composer.reviewers.indexOf(m.user_id)+1}. `}{displayName(m.user_id)} <small>{m.role}</small></span></label>)}
       {!assignedReviewers.length&&<div className="bt-alert">Add an authorized reviewer in Team before submitting.</div>}
      </div>
      <label className="bt-check-row"><input type="checkbox" checked={composer.sensitive} onChange={e=>setComposer(c=>({...c,sensitive:e.target.checked}))}/> Contains sensitive information. Prevent execution under default policy.</label>

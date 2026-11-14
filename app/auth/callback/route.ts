@@ -1,10 +1,10 @@
 import {NextRequest,NextResponse} from "next/server";
 import {serverSupabase} from "@/lib/supabase-server";
+import {authDestination} from "@/lib/auth-destination";
 export async function GET(request:NextRequest){
  const url=new URL(request.url);
  const code=url.searchParams.get("code");
- const next=url.searchParams.get("next")||"/console";
- const destination=next.startsWith("/")&&!next.startsWith("//")?next:"/console";
+ const destination=authDestination(url.searchParams.get("next"));
  if(code){
   const supabase=await serverSupabase();
   const {error}=await supabase.auth.exchangeCodeForSession(code);

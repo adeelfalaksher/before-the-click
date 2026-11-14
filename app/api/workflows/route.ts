@@ -9,7 +9,7 @@ const schema = z.object({
   title: z.string().trim().min(3).max(100),
   objective: z.string().trim().min(5).max(1200),
   provider: z.enum(["workspace","gmail","calendar","drive"]),
-  operation: z.enum(["publish_record","send","create_event","update_event","move_file"]),
+  operation: z.enum(["publish_record","send","create_event","move_file"]),
   resource: z.string().max(256),
   document: z.object({
     account: z.string().max(255).optional(),
@@ -28,18 +28,30 @@ const schema = z.object({
   reviewers: z.array(z.string().uuid()).min(1).max(8)
 }).strict().superRefine((v,ctx)=>{
   const allowed: Record<string,string[]> = {
-    workspace:["publish_record"], gmail:["send"], calendar:["create_event","update_event"], drive:["move_file"]
+    workspace:["publish_record"], gmail:["send"], calendar:["create_event"], drive:["move_file"]
   };
   if(!allowed[v.provider]?.includes(v.operation)) ctx.addIssue({code:"custom",message:"Unsupported provider operation."});
-  if(v.provider==="gmail" && (!v.document.proposal.to || !v.document.account))
-    ctx.addIssue({code:"custom",message:"Gmail needs a recipient and connected account."});
+  if(v.workflow && !v.expectedVersion) ctx.addIssue({code:"custom",message:"Reload the latest version before editing."});
+  const {subject,body,to,start,end,fileId,destinationId}=v.document.proposal;
+  const issue=(message:string)=>ctx.addIssue({code:"custom",message});
+  if(v.provider!=="workspace"&&!v.document.account) issue("Choose a connected account.");
+  if(v.provider==="workspace"&&(subject.length>200||body.length>10000)) issue("Workspace records have a 200-character title limit and a 10,000-character body limit.");
+  if(v.provider==="gmail"&&!to) issue("Gmail needs a recipient.");
+  const timestamp=z.string().datetime({offset:true});
+  if(v.provider==="calendar"&&(!timestamp.safeParse(start).success||!timestamp.safeParse(end).success||Date.parse(end!)<=Date.parse(start!)))
+    issue("Choose a valid start time and a later end time.");
+  const driveId=/^[A-Za-z0-9_-]{1,256}$/;
+  if(v.provider==="drive"&&(!driveId.test(fileId||"")||!driveId.test(destinationId||"")||fileId===destinationId))
+    issue("Choose a Drive file and a different destination folder.");
 });
 
 export async function POST(request: Request) {
   const actor = await authenticated();
   if (!actor) return Response.json({error:"Sign in to create a workflow."},{status:401});
   try {
-    const data=schema.parse(await request.json());
+    const parsed=schema.safeParse(await request.json());
+    if(!parsed.success) return Response.json({error:parsed.error.issues[0]?.message||"Check the proposal fields."},{status:400});
+    const data=parsed.data;
     const signed=signedOperation(actor.user.id,"proposal",data);
     const result=await actor.supabase.rpc("btc_propose",signed);
     if(result.error) throw result.error;

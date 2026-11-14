@@ -1,4 +1,3 @@
--- Private file storage for real workspaces.
 create table if not exists public.attachments (
  id uuid primary key default gen_random_uuid(),
  workspace_id uuid not null references public.workspaces(id) on delete cascade,

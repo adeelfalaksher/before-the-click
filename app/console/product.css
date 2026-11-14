@@ -237,6 +237,10 @@ html{background:#fff}body{background:#fff!important;color:var(--bt-ink)!importan
 .bt-diagram-top span{display:flex;align-items:center;gap:9px}
 .bt-diagram-top i{height:7px;width:7px;background:#46ae8c;border-radius:50%}
 .bt-diagram-main{padding:25px}
+.bt-preview-choices{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:22px}
+.bt-preview-choices button{border:1px solid transparent;border-radius:6px;background:#f5f7fa;color:#485463;padding:7px 10px;font-size:12px}
+.bt-preview-choices button:hover{border-color:#b0bfff}
+.bt-preview-choices button[aria-pressed=true]{background:#e8eefd;color:#243e96;border-color:#cbd6fe}
 .bt-diagram-action{display:flex;align-items:center;gap:13px;border-bottom:1px solid #edf0f2;padding-bottom:19px}
 .bt-diagram-action>span{width:42px;height:42px;background:#ebefff;border-radius:8px;display:grid;place-items:center;color:#2e4f9f}
 .bt-diagram-action strong{font-size:13px}
@@ -245,7 +249,7 @@ html{background:#fff}body{background:#fff!important;color:var(--bt-ink)!importan
 .bt-diagram-message{border:1px solid #e5eaef;border-radius:7px;margin:22px 0;padding:22px;background:#fcfdfe}
 .bt-diagram-message span{font-size:10px;font-weight:800;color:#8b99a7;letter-spacing:.1em}
 .bt-diagram-message strong{display:block;font-size:15px;margin:8px 0}
-.bt-diagram-message p{font-size:12px}
+.bt-diagram-message p{font-size:13px;margin-top:8px;min-height:3.2em}
 .bt-diagram-bottom{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:3px}
 .bt-diagram-bottom>span{color:#7c8792;font-size:11px;display:flex;align-items:center;gap:6px}
 .bt-features{border-top:1px solid var(--bt-line);background:#f9fafc;padding:78px max(40px,calc((100vw - 1290px)/2))}
