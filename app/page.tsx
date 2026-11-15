@@ -1,7 +1,10 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowDownRight, ArrowRight, ArrowUpRight, Check, ChevronRight, Clock3, FolderOpen, Inbox, ShieldCheck, Waypoints } from "lucide-react";
 import { Brand, SiteFooter } from "./ui";
+
+export const metadata: Metadata = { verification: { google: "M-UOaxmt9j09vhrwxyVq8-8csHof7PgxYfNaxCDdHSE" } };
 
 const steps = [
   { name: "Propose a change", detail: "Write the action yourself or use AI to draft the content.", icon: Inbox },
