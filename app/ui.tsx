@@ -15,6 +15,7 @@ export function SiteFooter() {
       <Link href="/console">Workspace <ArrowUpRight size={13} /></Link>
       <Link href="/console?view=map">Simulator <ArrowUpRight size={13} /></Link>
       <Link href="/guide">Field guide <ArrowUpRight size={13} /></Link>
+      <Link href="/privacy">Privacy policy <ArrowUpRight size={13} /></Link>
     </nav>
     <span className="footer-copyright">Before the Click © 2026</span>
   </div></footer>;

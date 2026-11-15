@@ -133,6 +133,11 @@ fieldset { min-width: 0; }
 .guide-questions details { border-bottom: 1px solid var(--line); padding: 15px 0; }
 .guide-questions summary { font-weight: 650; cursor: pointer; }
 .guide-questions p { color: var(--muted); margin: 10px 0 3px; }
+.privacy-sections { max-width: 720px; margin-top: 40px; }
+.privacy-sections section { padding: 20px 0; border-top: 1px solid var(--line); }
+.privacy-sections h2 { margin: 0 0 10px; font-size: 1.18rem; }
+.privacy-sections p { margin: 0 0 10px; color: var(--muted); }
+.privacy-sections a { color: inherit; text-decoration: underline; }
 
 .workspace-app { min-height: 100vh; }
 .workspace-top { position: relative; background: #fdfbf6; border-bottom: 1px solid var(--line); }
