@@ -22,6 +22,14 @@ export function isGoogleProvider(value:unknown):value is Provider{
  return value==="gmail"||value==="calendar"||value==="drive";
 }
 export function googleConfigured(){return Boolean(process.env.GOOGLE_CLIENT_ID&&process.env.GOOGLE_CLIENT_SECRET);}
+export function googlePrivateTesting(){return Boolean(process.env.GOOGLE_TEST_WORKSPACE_ID);}
+export async function googleAllowed(actor:Actor,workspace:string|null){
+ const testWorkspace=process.env.GOOGLE_TEST_WORKSPACE_ID;
+ if(!testWorkspace)return true;
+ if(workspace!==testWorkspace)return false;
+ const member=await actor.data<{role:string}|null>("member",{workspace});
+ return member?.role==="owner";
+}
 export function oauthRedirect(){return process.env.GOOGLE_REDIRECT_URI||(process.env.APP_URL||"https://before-the-click.vercel.app")+"/api/integrations/google/callback";}
 const encryptionKey=()=>{
  const secret=process.env.BTC_SERVER_SECRET;
@@ -46,6 +54,7 @@ export async function saveToken(actor:Actor,workspace:string,provider:Provider,a
  await actor.data("btc_connection",operation);
 }
 export async function getToken(actor:Actor,workspace:string,provider:Provider):Promise<{token:Token;account:string}>{
+ if(!await googleAllowed(actor,workspace))throw new Error("Google connectors are limited to the private test workspace.");
  const operation=signedOperation(actor.user.id,"connection",{intent:"get",workspace,provider});
  const data=await actor.data<{ciphertext:string;account:string}|null>("btc_connection",operation);
  if(!data||!data.ciphertext)throw new Error("Connect the selected Google account first.");

@@ -1,6 +1,6 @@
 import {NextRequest,NextResponse} from "next/server";
 import {authenticated} from "@/lib/btc-security";
-import {googleConfigured,hasGoogleScopes,isGoogleProvider,oauthRedirect,saveToken,type Provider} from "@/lib/google";
+import {googleAllowed,googleConfigured,hasGoogleScopes,isGoogleProvider,oauthRedirect,saveToken,type Provider} from "@/lib/google";
 export const runtime="nodejs";
 export async function GET(request:NextRequest){
  const redirect=new URL("/console?view=integrations",request.url);
@@ -21,6 +21,7 @@ export async function GET(request:NextRequest){
   const r=NextResponse.redirect(redirect);r.cookies.delete("btc_oauth");return r;
  }
  try{
+  if(!await googleAllowed(actor,saved.workspace))throw new Error("Google connectors are limited to the private test workspace.");
   if(!code)throw new Error("Google did not return an authorization code. Connect again.");
   const response=await fetch("https://oauth2.googleapis.com/token",{
    method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},

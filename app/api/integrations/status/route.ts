@@ -1,8 +1,10 @@
 import { authenticated } from "@/lib/btc-security";
-import { googleConfigured } from "@/lib/google";
+import { googleAllowed, googleConfigured, googlePrivateTesting } from "@/lib/google";
 import { draftAvailability } from "@/lib/drafting";
-export async function GET(){
+import { reply } from "@/lib/http";
+export async function GET(request:Request){
  const actor=await authenticated();
  if(!actor)return Response.json({error:"Unauthorized"},{status:401});
- return Response.json({google:googleConfigured(),...draftAvailability()});
+ const workspace=new URL(request.url).searchParams.get("workspace");
+ return reply({google:googleConfigured()&&await googleAllowed(actor,workspace),googlePrivateTesting:googlePrivateTesting(),...draftAvailability()});
 }

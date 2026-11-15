@@ -72,7 +72,8 @@ export default function Console({userId,username}:{userId:string;username:string
  const [createFlow,setCreateFlow]=useState(false),[selectedFlow,setSelectedFlow]=useState<string|null>(null),[confirmExecute,setConfirmExecute]=useState<ExecutionConfirmation|null>(null);
  const [mapFlow,setMapFlow]=useState("");
  const [search,setSearch]=useState(""),[filter,setFilter]=useState("all");
- const [config,setConfig]=useState({google:false,gemini:false,openrouter:false});
+ const [providerConfig,setProviderConfig]=useState({google:false,googlePrivateTesting:false,gemini:false,openrouter:false,workspace:""});
+ const config={...providerConfig,google:providerConfig.google&&providerConfig.workspace===workspaceId};
  const [draftProvider,setDraftProvider]=useState<"auto"|"openrouter">("auto");
  const [composer,setComposer]=useState({
   title:"",objective:"",provider:"workspace" as Provider,subject:"",body:"",
@@ -162,7 +163,13 @@ export default function Console({userId,username}:{userId:string;username:string
   finally{if(isCurrent())setLoading(false);}
  },[userId]);
 
- useEffect(()=>{void refreshWorkspaces();fetch("/api/integrations/status").then(r=>r.ok?r.json():null).then(d=>{if(d)setConfig(d)}).catch(()=>{});},[refreshWorkspaces]);
+ useEffect(()=>{void refreshWorkspaces();},[refreshWorkspaces]);
+ useEffect(()=>{
+  const controller=new AbortController();
+  fetch("/api/integrations/status?"+new URLSearchParams({workspace:workspaceId}),{signal:controller.signal})
+   .then(r=>r.ok?r.json():null).then(d=>{if(d&&!controller.signal.aborted)setProviderConfig({...d,workspace:workspaceId})}).catch(()=>{});
+  return ()=>controller.abort();
+ },[userId,workspaceId]);
  useEffect(()=>{if(workspaceId)void refresh(workspaceId);},[workspaceId,refresh]);
  useEffect(()=>{
   const p=new URLSearchParams(location.search),v=p.get("view");
@@ -602,7 +609,7 @@ export default function Console({userId,username}:{userId:string;username:string
           <div className="bt-connector-icon"><Icon size={25} strokeWidth={1.6}/></div>
           <div className="bt-connector-main"><h2>{item.title}</h2><p>{item.detail}</p>
            {c?<div className="bt-connected"><CheckCircle2 size={15}/> Connected: {c.account}</div>:
-            <small>{config.google?"Account authorization required.":"Google connection is not available in this deployment."}</small>}</div>
+            <small>{config.google?"Account authorization required.":config.googlePrivateTesting?"Google connections are in private testing.":"Google connection is not available in this deployment."}</small>}</div>
           {c?<button className="bt-secondary" disabled={saving} onClick={()=>void disconnect(item.provider)}>Disconnect <X size={15}/></button>:
            <a className={"bt-secondary"+(!config.google?" bt-disabled":"")} aria-disabled={!config.google} onClick={e=>{if(!config.google)e.preventDefault()}}
             href={"/api/integrations/google/start?provider="+item.provider+"&workspace="+encodeURIComponent(workspaceId)}>Connect <ArrowUpRight size={15}/></a>}

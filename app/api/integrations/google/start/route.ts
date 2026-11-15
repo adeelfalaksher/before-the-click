@@ -1,7 +1,7 @@
 import {createHash,randomBytes} from "node:crypto";
 import {NextRequest,NextResponse} from "next/server";
 import {authenticated} from "@/lib/btc-security";
-import {googleConfigured,isGoogleProvider,oauthRedirect,oauthScopes} from "@/lib/google";
+import {googleAllowed,googleConfigured,isGoogleProvider,oauthRedirect,oauthScopes} from "@/lib/google";
 export const runtime="nodejs";
 export async function GET(request:NextRequest){
  const actor=await authenticated();
@@ -12,6 +12,7 @@ export async function GET(request:NextRequest){
  if(!workspace||!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(workspace))return Response.json({error:"Invalid workspace."},{status:400});
  const member=await actor.data("member",{workspace});
  if(!member)return Response.json({error:"Workspace access required."},{status:403});
+ if(!await googleAllowed(actor,workspace))return Response.json({error:"Google connectors are limited to the private test workspace."},{status:403});
  if(!googleConfigured())return NextResponse.redirect(new URL(`/console?view=integrations&workspace=${encodeURIComponent(workspace)}&error=google-config`,request.url));
  const state=randomBytes(24).toString("hex");
  const verifier=randomBytes(32).toString("base64url");

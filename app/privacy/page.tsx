@@ -28,7 +28,11 @@ export default function PrivacyPolicy() {
         <section>
           <h2>Disconnecting and deleting data</h2>
           <p>Open Integrations in your workspace to disconnect a Google account. This removes the stored connection and attempts to revoke access at Google. You can also remove the grant in your <a href="https://myaccount.google.com/connections">Google Account</a>. Disconnecting does not erase previously saved proposals, audit records, or changes already made in Google.</p>
-          <p>For a privacy question or a request to access or delete account data, email <a href="mailto:adeelfalaksher900@gmail.com">adeelfalaksher900@gmail.com</a>. Include your Before the Click username so we can identify your account.</p>
+          <p>Sign in to send a private request to the project maintainers about your Before the Click account.</p>
+          <form action="/api/privacy" method="post">
+            <button className="button dark" name="request" value="access">Request a copy of my data</button>{" "}
+            <button className="button dark" name="request" value="deletion">Request account deletion</button>
+          </form>
         </section>
       </div>
     </main>
